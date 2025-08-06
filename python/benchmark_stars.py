@@ -461,7 +461,11 @@ def encounters_new_orba_ecc(smbh_mass,
     id_num_unbound = None
     id_num_flipped_rotation = None
 
-    E_give_final, E_take_final, J_give_final, J_take_final = transition_physical_as_EL(E_give_initial, J_give_initial, E_take_initial, J_take_initial, Delta_E, mass_give_geometric, mass_take_geometric, smbh_mass=smbh_mass_geometric, sanity=False, cardano = cardano)
+    if cardano:
+        E_give_final, E_take_final, J_give_final, J_take_final = helper.transition_physical_as_el(E_give_initial, J_give_initial, E_take_initial, J_take_initial, Delta_E, mass_give_geometric, mass_take_geometric, None, smbh_mass=smbh_mass_geometric)
+
+    else:
+        E_give_final, E_take_final, J_give_final, J_take_final = transition_physical_as_EL(E_give_initial, J_give_initial, E_take_initial, J_take_initial, Delta_E, mass_give_geometric, mass_take_geometric, smbh_mass=smbh_mass_geometric, sanity=False, cardano = cardano)
 
     # if object is unbound, don't change parameters so they can be recorded
     # give object (typically eccentric) is unbound
