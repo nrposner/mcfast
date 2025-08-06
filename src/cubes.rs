@@ -11,7 +11,8 @@ pub const G: f64 = 6.6743e-11;
 // fixed-size array and just note how many of the roots (either 1 or 3) are valid
 
 // we can make this easier to comprehend with the cardano struct above
-fn cubic_y_root_cardano(x0: f64, y0: f64) -> ([f64; 3], usize) {
+#[pyfunction]
+pub fn cubic_y_root_cardano(x0: f64, y0: f64) -> ([f64; 3], usize) {
     if x0 == 0.0 {
         ([y0/1.5, 0.0, 0.0], 1) //padding out the array
     } else {
@@ -39,7 +40,8 @@ fn cubic_y_root_cardano(x0: f64, y0: f64) -> ([f64; 3], usize) {
     }
 }
 
-fn cubic_finite_step_root_cardano(
+#[pyfunction]
+pub fn cubic_finite_step_root_cardano(
     x0: f64, 
     y0: f64, 
     omega_s: f64
@@ -132,7 +134,8 @@ fn components_from_el(e: f64, l:f64, units: Option<&str>, smbh_mass: f64) -> (f6
 }
 
 #[allow(clippy::too_many_arguments)]
-fn transition_physical_as_el(
+#[pyfunction]
+pub fn transition_physical_as_el(
     e1: f64, 
     l1: f64,
     e2: f64,
@@ -225,7 +228,7 @@ fn transition_physical_as_el(
         for r in roots_array.iter().take(roots_count) {
             let ell = r * ell0;
             let omega = g_times_mass.powi(2) / ell.powi(3);
-            if omega < min_omega {
+            if omega > 0.0 && omega < min_omega {
                 min_omega = omega;
             }
         }
@@ -238,7 +241,7 @@ fn transition_physical_as_el(
         for r in roots_alt_array.iter().take(roots_alt_count) {
             let ell = r * ell0;
             let omega = g_times_mass.powi(2) / (ell).powi(3);
-            if omega < min_omega_alt {
+            if omega > 0.0 && omega < min_omega_alt {
                 min_omega_alt = omega;
             }
         }
