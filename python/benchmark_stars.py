@@ -356,8 +356,7 @@ def transition_physical_as_EL(E1, L1, E2, L2, DeltaE, m1, m2, units='geometric',
             print(" Omega values for both tangents ", my_roots_omega/Omega0, my_roots_omega_alt/Omega0)
 
         # Non-contracting scenario, the two objects move away. We can use any omega smaller than the largest root above
-        # Omega_star = np.min(np.real(np.concatenate((my_roots_omega, my_roots_omega_alt))))
-        Omega_star = np.min(my_roots_omega_alt)
+        Omega_star = np.min(np.real(np.concatenate((my_roots_omega, my_roots_omega_alt))))
 
     #DeltaE = np.sqrt(m1 * m2 / (m1 + m2)**2) * DeltaE
     # Transition
