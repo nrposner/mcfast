@@ -287,7 +287,11 @@ def transition_physical_as_EL(E1, L1, E2, L2, DeltaE, m1, m2, units='geometric',
         #   -  Object 1 is moving to tighter orbits (lower energy magnitude), so root of x is increasing in magnitude!
         Omega_trial = Omega2
         if cardano:
-            my_stepsize_roots = cubic_finite_step_root_cardano(x0_alt, y0_alt, Omega_trial / Omega0)
+            # my_stepsize_roots = cubic_finite_step_root_cardano(x0_alt, y0_alt, Omega_trial / Omega0)
+            roots_buffer, valid_count = helper.cubic_finite_step_root_cardano(x0_alt, y0_alt, Omega_trial / Omega0)
+            all_roots = np.array(roots_buffer)
+            my_stepsize_roots = all_roots[:valid_count]
+
         else: 
             my_stepsize_roots = cubic_finite_step_root(x0_alt, y0_alt, Omega_trial / Omega0)
 
