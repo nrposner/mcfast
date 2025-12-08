@@ -2,10 +2,9 @@
 //!
 
 use pyo3::prelude::*;
+use crate::constants::G;
 
 use std::f64::consts::PI;
-
-pub const G: f64 = 6.6743e-11;
 
 // in order to avoid heap allocations each time we run this function, we can instead return a
 // fixed-size array and just note how many of the roots (either 1 or 3) are valid
@@ -40,7 +39,7 @@ pub fn cubic_y_root_cardano(x0: f64, y0: f64) -> ([f64; 3], usize) {
     }
 }
 
-#[pyfunction(signature=(x0, y0, omega_s))]
+#[pyfunction(signature=(x0, y0, omega_s))] 
 pub fn cubic_finite_step_root_cardano(
     x0: f64,
     y0: f64,
@@ -79,32 +78,27 @@ pub fn cubic_finite_step_root_cardano(
 
     let mut buffer = [[0.0; 2]; 3];
     let mut pair_count = 0;
+    
+    // iterate through the valid y-roots found above
+    for y_root in roots_y_array.iter().take(y_count) {
 
-    // Iterate through the valid y-roots found above.
-    for i in 0..y_count {
-        let y_root = roots_y_array[i];
-
-        // --- START: NEW FILTERING LOGIC ---
-        // This section now directly mirrors the Python version's filter.
-
-        // Calculate the corresponding x-root *before* filtering.
+        // calculate the corresponding x-root before filtering
         let x_root = -1.0 / (2.0 * y_root.powi(2));
 
-        // Apply all three conditions from the Python `indx_ok` mask.
-        let is_valid_pair = y_root > 0.0 && x_root.is_finite() && x_root < 0.0;
+        // apply all three conditions from the Python `indx_ok` mask
+        let is_valid_pair = *y_root > 0.0 && x_root.is_finite() && x_root < 0.0;
 
         if is_valid_pair {
-            // Ensure we don't write past the end of our 3-element buffer.
+            // ensure we don't write past the end of our 3-element buffer
             if pair_count < 3 {
-                buffer[pair_count] = [x_root, y_root];
+                buffer[pair_count] = [x_root, *y_root];
                 pair_count += 1;
             } else {
-                // This should be unreachable if y_count is max 3,
-                // but it's good practice for safety.
+                // this should be unreachable if y_count is max 3,
+                // but it's good practice for safety
                 break;
             }
         }
-        // --- END: NEW FILTERING LOGIC ---
     }
 
     (buffer, pair_count)
