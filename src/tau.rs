@@ -230,3 +230,8 @@ pub fn tau_inc_dyn_helper<'py>(
     }
 }
 
+/// A function to output fizzbuzz when provided with the 
+/// maximum number i to which to count
+fn write_fizzbuzz(i: u32) {
+
+}
