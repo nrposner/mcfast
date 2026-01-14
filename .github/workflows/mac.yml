@@ -1,0 +1,90 @@
+name: Build and publish Mac wheels
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  build_wheels:
+    name: Build wheels for Python ${{ matrix.python-version }}
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build wheels using maturin
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --strip --out dist -i python
+
+      - name: Verify wheel is valid
+        run: python -m zipfile -t dist/*.whl
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-${{ matrix.python-version }}
+          path: dist
+          compression-level: 0
+
+  publish_wheels:
+    name: Publish wheels to PyPI
+    needs: [build_wheels]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all wheels from build jobs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist/
+          merge-multiple: true
+
+      - name: List distribution files
+        run: ls -la dist/
+
+      - name: Verify all wheels are valid
+        run: |
+          for f in dist/*.whl; do
+            echo "Checking $f"
+            python -m zipfile -t "$f"
+          done
+
+      - name: Set up Python for sdist
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install maturin for sdist
+        run: pip install maturin
+
+      - name: Build the source distribution (sdist)
+        run: maturin sdist --out dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+          verbose: true

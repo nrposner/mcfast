@@ -1,0 +1,59 @@
+name: Build and publish Ubuntu wheels
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  build_wheels:
+    name: Build manylinux wheels for Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build wheels using maturin
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --strip --out dist -i python${{ matrix.python-version }}
+          manylinux: manylinux_2_28
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-ubuntu-${{ matrix.python-version }}
+          path: dist
+          compression-level: 0
+
+  publish_wheels:
+    name: Publish wheels to PyPI
+    needs: [build_wheels]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download all wheels from build jobs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist/
+          merge-multiple: true
+
+      - name: List distribution files
+        run: ls -la dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+          verbose: true
