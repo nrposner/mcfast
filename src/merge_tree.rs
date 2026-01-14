@@ -526,6 +526,7 @@ impl MergeForest {
         ))
     }
 
+    #[allow(clippy::complexity)]
     /// Pickle serialization support - returns state as a Python dict
     pub fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         use pyo3::types::PyDict;
@@ -552,11 +553,11 @@ impl MergeForest {
     }
 
     /// Pickle deserialization support - reconstructs from Python dict
-    #[allow(deprecated)]
+    #[allow(clippy::complexity)]
     pub fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
         use pyo3::types::PyDict;
 
-        let state: &Bound<'_, PyDict> = state.downcast()?;
+        let state: &Bound<'_, PyDict> = state.cast()?;
 
         // Restore index_to_uuid
         let index_to_uuid: Vec<String> = state
