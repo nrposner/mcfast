@@ -12,19 +12,11 @@
 // make plots is the most common according to harry
 
 
-use std::f64::consts::PI;
+// use std::f64::consts::PI;
+//
+// use pyo3::pyfunction;
 
-use pyo3::pyfunction;
-
-/// A module to hold astrophysical constants in CGS units.
-mod consts {
-    /// Gravitational constant in cm^3 g^-1 s^-2
-    pub const G_CGS: f64 = 6.67430e-8;
-    /// Speed of light in cm s^-1
-    pub const C_CGS: f64 = 2.99792458e10;
-    /// Mass of the Sun in grams
-    pub const M_SUN_CGS: f64 = 1.98847e33;
-}
+use crate::constants::{G_CGS, C_CGS, M_SUN_CGS};
 
 // placeholder fn
 fn si_from_r_g(_smbh_mass: f64, r_g: f64) -> f64 {
