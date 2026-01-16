@@ -1,21 +1,13 @@
 use pyo3::prelude::*;
 
-pub mod constants;
-pub mod cubes;
-pub mod surrogate;
-pub mod kick;
-pub mod luminosity;
-pub mod powerlaw;
-pub mod prograde;
-pub mod spline;
-pub mod tau;
-pub mod torque;
-pub mod merge_tree;
-use cubes::{encounters_new_orba_ecc, cubic_y_root_cardano, cubic_finite_step_root_cardano, transition_physical_as_el};
-use powerlaw::{continuous_broken_powerlaw, dual_powerlaw, dual_powerlaw_with_grid};
-use tau::{tau_ecc_dyn_helper, tau_inc_dyn_helper};
-use kick::analytical_kick_velocity_helper;
-use merge_tree::MergeForest;
+mod tools;
+mod accelerants;
+
+use accelerants::cubes::{encounters_new_orba_ecc, cubic_y_root_cardano, cubic_finite_step_root_cardano, transition_physical_as_el};
+use accelerants::powerlaw::{continuous_broken_powerlaw, dual_powerlaw, dual_powerlaw_with_grid};
+use accelerants::tau::{tau_ecc_dyn_helper, tau_inc_dyn_helper};
+use accelerants::kick::analytical_kick_velocity_helper;
+use tools::merge_tree::MergeForest;
 
 /// A Python module implemented in Rust.
 #[pymodule]
