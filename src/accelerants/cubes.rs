@@ -48,8 +48,6 @@ pub fn cubic_finite_step_root_cardano(
     let p = 2.0 * (x0 - (omega_s * y0));
     let q = 2.0 * omega_s;
 
-    // This block determines the y-roots using Cardano's method.
-    // This logic appears to correctly mirror your Python version.
     let (roots_y_array, y_count) = if p == 0.0 {
         ([(-q).cbrt(), 0.0, 0.0], 1)
     } else {
