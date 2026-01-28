@@ -1,0 +1,81 @@
+name: Build and publish Mac x86_64 wheels
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  build_wheels:
+    name: Build x86_64 wheels for Python ${{ matrix.python-version }}
+    runs-on: macos-13
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Build wheels using maturin
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --strip --out dist -i python --target x86_64-apple-darwin
+
+      - name: Verify wheel is valid
+        run: python -m zipfile -t dist/*.whl
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-x86_64-${{ matrix.python-version }}
+          path: dist
+          compression-level: 0
+
+  publish_wheels:
+    name: Publish x86_64 wheels to PyPI
+    needs: [build_wheels]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all wheels from build jobs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist/
+          merge-multiple: true
+
+      - name: List distribution files
+        run: ls -la dist/
+
+      - name: Verify all wheels are valid
+        run: |
+          for f in dist/*.whl; do
+            echo "Checking $f"
+            python -m zipfile -t "$f"
+          done
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+          verbose: true
