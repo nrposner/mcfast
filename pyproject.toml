@@ -19,9 +19,5 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dependencies = [
- "pandas>=2.0.3",
- "tqdm>=4.67.1",
-]
 [tool.maturin]
 features = ["pyo3/extension-module"]
