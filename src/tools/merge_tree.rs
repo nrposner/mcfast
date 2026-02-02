@@ -297,7 +297,8 @@ impl MergeForest {
     ///
     /// Returns:
     ///     List of ancestor UUIDs (not including the input UUID)
-    pub fn get_ancestors(&self, uuid: &str) -> PyResult<Vec<String>> {
+    pub fn get_ancestors(&self, uuid: &str) -> PyResult<Vec<(String, String)>> {
+
         let start_idx = self
             .uuid_to_index
             .get(uuid)
@@ -309,24 +310,40 @@ impl MergeForest {
 
         // Start with the parents of the given node
         if let Some((p1, p2)) = self.nodes[*start_idx].parents {
-            stack.push(p1);
+            stack.push(("A".to_string(), p1));
             if p1 != p2 {
-                stack.push(p2);
+                stack.push(("B".to_string(), p2));
             }
         }
 
+        fn numbering_helper(input: &str) -> (String, String) { 
+            let outputs = if input.ends_with('A') 
+            || input.ends_with('B')  {
+                ("1", "2")
+            } else {
+                ("A", "B")
+            };
+
+            (input.to_owned() + outputs.0, input.to_owned() + outputs.1)
+        }
+
+        ancestors.push(('P'.to_string(), uuid.to_string()));
+
         // DFS traversal of all ancestors with cycle detection
-        while let Some(idx) = stack.pop() {
+        while let Some((val, idx)) = stack.pop() {
             if !visited.insert(idx) {
                 continue; // Skip already visited nodes
             }
 
-            ancestors.push(self.index_to_uuid[idx].clone());
+            ancestors.push((val.to_owned(), self.index_to_uuid[idx].clone()));
 
             if let Some((p1, p2)) = self.nodes[idx].parents {
-                stack.push(p1);
+
+                let outputs = numbering_helper(&val);
+
+                stack.push((outputs.0, p1));
                 if p1 != p2 {
-                    stack.push(p2);
+                    stack.push((outputs.1, p2));
                 }
             }
         }
