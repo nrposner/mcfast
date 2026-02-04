@@ -7,3 +7,5 @@ pub mod prograde;
 pub mod spline;
 pub mod tau;
 pub mod torque;
+pub mod star_mass;
+pub mod gw;
