@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 
-use crate::accelerants::{FloatArray1, G_SI, luminosity::si_from_r_g};
+use crate::accelerants::{FloatArray1, G_SI, M_SUN_KG, luminosity::si_from_r_g};
 
 #[pyfunction]
 pub fn analytical_kick_velocity_helper<'py>(
@@ -43,7 +43,6 @@ pub fn analytical_kick_velocity_helper<'py>(
         .zip(sa2_slice)
         .zip(angle_slice)
         .enumerate() {
-        // --- LOGIC START ---
 
         // Handle the Swap (Akiba et al. Appendix A: mass_2 should be heavier)
         // We use simple variable shadowing to swap purely on the stack.
@@ -123,7 +122,7 @@ pub fn merged_orb_ecc_helper<'py>(
         let orbs_a_units = si_from_r_g(smbh_mass, *bin_orb);
 
         // under the assumption that the output here is in m/s, since G is in SI 
-        let v_kep = ((G_SI * smbh_mass / orbs_a_units).sqrt()) / 1000.0; // turn to km/s
+        let v_kep = ((G_SI * (smbh_mass * M_SUN_KG) / orbs_a_units).sqrt()) / 1000.0;
 
         let merged_ecc = v_kick/v_kep;
 
@@ -133,57 +132,3 @@ pub fn merged_orb_ecc_helper<'py>(
     out_arr
 }
 
-//     # As in Akiba et al 2024 Appendix A, mass_2 should be the more massive BH in the binary.
-//     mask = mass_1 <= mass_2
-//
-//     m_1_new = np.where(mask, mass_1, mass_2) * u.solMass
-//     m_2_new = np.where(mask, mass_2, mass_1)* u.solMass
-//     spin_1_new = np.where(mask, spin_1, spin_2)
-//     spin_2_new = np.where(mask, spin_2, spin_1)
-//     spin_angle_1_new = np.where(mask, spin_angle_1, spin_angle_2)
-//     spin_angle_2_new = np.where(mask, spin_angle_2, spin_angle_1)
-//
-//     # "perp" and "par" refer to components perpendicular and parallel to the orbital angular momentum axis, respectively.
-//     # Orbital angular momentum axis of binary is aligned with the disk angualr momentum.
-//     # Find the perp and par components of spin:
-//     spin_1_par = spin_1_new * np.cos(spin_angle_1_new)
-//     spin_1_perp = spin_1_new * np.sin(spin_angle_1_new)
-//     spin_2_par = spin_2_new * np.cos(spin_angle_2_new)
-//     spin_2_perp = spin_2_new * np.sin(spin_angle_2_new)
-//
-//     # Find the mass ratio q and asymmetric mass ratio eta
-//     # as defined in Akiba et al. 2024 Appendix A:
-//     q = m_1_new / m_2_new
-//     eta = q / (1 + q)**2
-//
-//     # Use Akiba et al. 2024 eqn A5:
-//     S = (2 * (spin_1_new + q**2 * spin_2_new)) / (1 + q)**2
-//
-//     # As defined in Akiba et al. 2024 Appendix A:
-//     xi = np.radians(145)
-//     A = 1.2e4 * u.km / u.s
-//     B = -0.93
-//     H = 6.9e3 * u.km / u.s
-//     V_11, V_A, V_B, V_C = 3678 * u.km / u.s, 2481 * u.km / u.s, 1793* u.km / u.s, 1507 * u.km / u.s
-//     angle = rng.uniform(0.0, 2*np.pi, size=len(mass_1))
-//
-//     # Use Akiba et al. 2024 eqn A2:
-//     v_m = A * eta**2 * np.sqrt(1 - 4 * eta) * (1 + B * eta)
-//
-//     # Use Akiba et al. 2024 eqn A3:
-//     v_perp = (H * eta**2 / (1 + q)) * (spin_2_par - q * spin_1_par)
-//
-//     # Use Akiba et al. 2024 eqn A4:
-//     v_par = ((16 * eta**2) / (1 + q)) * (V_11 + (V_A * S) + (V_B * S**2) + (V_C * S**3)) * \
-//             np.abs(spin_2_perp - q * spin_1_perp) * np.cos(angle)
-//
-//     # Use Akiba et al. 2024 eqn A1:
-//     v_kick = np.sqrt((v_m + v_perp * np.cos(xi))**2 +
-//                      (v_perp * np.sin(xi))**2 +
-//                      v_par**2)
-//     v_kick = np.array(v_kick.value)
-//     assert np.all(v_kick > 0), \
-//         "v_kick has values <= 0"
-//     assert np.isfinite(v_kick).all(), \
-//         "Finite check failure: v_kick"
-//     return v_kick
