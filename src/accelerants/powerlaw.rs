@@ -4,6 +4,8 @@ use pyo3::{exceptions::PyValueError, prelude::*};
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use rayon::prelude::*;
 
+use crate::accelerants::FloatArray1;
+
 #[pyfunction]
 pub fn continuous_broken_powerlaw<'py>(
     py: Python<'py>,
@@ -11,7 +13,7 @@ pub fn continuous_broken_powerlaw<'py>(
     crit_radius: f64,
     // should be an int, but it seems that a float is being passed in instead
     index: f64,
-) -> Bound<'py, PyArray1<f64>> {
+) -> FloatArray1<'py> {
     let radius_slice = radius.as_slice().unwrap();
 
     let out_arr = unsafe{ PyArray1::new(py, radius_slice.len(), false)};
@@ -32,7 +34,7 @@ pub fn dual_powerlaw<'py>(
     crit_radius: f64,
     index_inner: f64,
     index_outer: f64,
-) -> Bound<'py, PyArray1<f64>> {
+) -> FloatArray1<'py> {
     let radius_slice = radius.as_slice().unwrap();
     
     let out_arr = unsafe { PyArray1::new(py, radius_slice.len(), false) };
@@ -82,7 +84,7 @@ pub fn dual_powerlaw_with_grid<'py>(
     crit_radius: f64,
     index_inner: f64,
     index_outer: f64,
-) -> (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>) {
+) -> (FloatArray1<'py>, FloatArray1<'py>) {
     // 1. Allocate uninitialized output arrays
     let r_arr = unsafe { PyArray1::new(py, num_points, false) };
     let y_arr = unsafe { PyArray1::new(py, num_points, false) };
@@ -119,7 +121,7 @@ pub fn dual_powerlaw_with_grid<'py>(
 
 // to be used as r, r_pdf = generate_r(...)
 #[pyfunction]
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub fn generate_r<'py>(
     py: Python<'py>,
     start: f64,
@@ -129,7 +131,7 @@ pub fn generate_r<'py>(
     index_inner: f64,
     index_outer: f64,
     volume_scaling: bool,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+) -> PyResult<(FloatArray1<'py>, FloatArray1<'py>)> {
 
     // given that y is just an intermediary, pay attention to whether or not we actually need to
     // initialize separate vecs for it.

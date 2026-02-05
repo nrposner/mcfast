@@ -16,11 +16,7 @@ use pyo3::prelude::*;
 use std::f64::consts::PI;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 
-use crate::constants::{G_CGS, C_CGS, M_SUN_CGS};
-
-const M_SUN_KG: f64 = 1.9884099e30;  // Solar mass in kg
-const C_SI: f64 = 299792460.0;     // Speed of light in m/s
-const G_SI: f64 = 6.67430e-11;     // Gravitational constant in m^3/(kg s^2)
+use crate::accelerants::{C_CGS, C_SI, FloatArray1, G_CGS, G_SI, M_SUN_KG};
 
 /// Calculate the gravitational radius r_g in SI units (meters)
 /// This matches the Python si_from_r_g function behavior
@@ -44,7 +40,7 @@ pub fn shock_luminosity_helper<'py>(
     disk_height_arr: PyReadonlyArray1<f64>,
     disk_density_arr: PyReadonlyArray1<f64>,
     v_kick_arr: PyReadonlyArray1<f64>,
-) -> Bound<'py, PyArray1<f64>> {
+) -> FloatArray1<'py> {
 
     let mass_final_slice = mass_final_arr.as_slice().unwrap();
     let bin_orb_slice = bin_orb_arr.as_slice().unwrap();
@@ -110,7 +106,7 @@ pub fn jet_luminosity_helper<'py>(
     spin_final_arr: PyReadonlyArray1<f64>,
     v_kick_arr: PyReadonlyArray1<f64>,
     sound_speed_arr: PyReadonlyArray1<f64>,
-) -> Bound<'py, PyArray1<f64>> {
+) -> FloatArray1<'py> {
     let mass_final_slice = mass_final_arr.as_slice().unwrap();
     let disk_density_slice = disk_density_arr.as_slice().unwrap();
     let spin_final_slice = spin_final_arr.as_slice().unwrap();

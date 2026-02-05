@@ -3,7 +3,8 @@ use std::f64::consts::PI;
 use pyo3::{exceptions::PyValueError, prelude::*};
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 
-use crate::constants::G;
+use crate::accelerants::{FloatArray1, G_SI};
+
 
 #[allow(clippy::type_complexity)]
 #[allow(clippy::too_many_arguments)]
@@ -20,7 +21,7 @@ pub fn tau_ecc_dyn_helper<'py>(
     omega_arr: PyReadonlyArray1<f64>,
     disk_surf_res_arr: PyReadonlyArray1<f64>,
     semi_maj_axis_arr: PyReadonlyArray1<f64>,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+) -> PyResult<(FloatArray1<'py>, FloatArray1<'py>)> {
 
     let semi_maj_axis_slice = semi_maj_axis_arr.as_slice().unwrap();
     let ecc_slice = ecc_arr.as_slice().unwrap();
@@ -49,7 +50,7 @@ pub fn tau_ecc_dyn_helper<'py>(
 
             let cos_omega = omega.cos();
 
-            let period = 2.0 * PI * (semi.powi(3) / (G * smbh_mass)).sqrt();
+            let period = 2.0 * PI * (semi.powi(3) / (G_SI * smbh_mass)).sqrt();
             let rec = semi * (1.0 - (ecc.powi(2)));
             let sigma_plus = (1.0 + ecc.powi(2) + 2.0 * ecc * cos_omega).sqrt();
             let sigma_minus = (1.0 + ecc.powi(2) - 2.0 * ecc * cos_omega).sqrt();
@@ -93,7 +94,7 @@ pub fn tau_ecc_dyn_helper<'py>(
 
             let cos_omega = omega.cos();
 
-            let period = 2.0 * PI * (semi.powi(3) / (G * smbh_mass)).sqrt();
+            let period = 2.0 * PI * (semi.powi(3) / (G_SI * smbh_mass)).sqrt();
             let rec = semi * (1.0 - (ecc.powi(2)));
             let sigma_plus = (1.0 + ecc.powi(2) + 2.0 * ecc * cos_omega).sqrt();
             let sigma_minus = (1.0 + ecc.powi(2) - 2.0 * ecc * cos_omega).sqrt();
@@ -145,7 +146,7 @@ pub fn tau_inc_dyn_helper<'py>(
     cos_omega: PyReadonlyArray1<f64>,
     disk_surf_res_arr: PyReadonlyArray1<f64>,
     semi_maj_axis_arr: PyReadonlyArray1<f64>,
-) -> PyResult<Bound<'py, PyArray1<f64>>> {
+) -> PyResult<FloatArray1<'py>> {
 
     let semi_maj_axis_slice = semi_maj_axis_arr.as_slice().unwrap();
     let ecc_slice = ecc_arr.as_slice().unwrap();
@@ -159,9 +160,9 @@ pub fn tau_inc_dyn_helper<'py>(
     // TODO:
     // this could be made even more efficient by pulling out more of the
     // static parts of the period calculation
-    let static_period_component = G * smbh_mass;
+    let static_period_component = G_SI * smbh_mass;
 
-    // part of: let period = 2.0 * PI * (semi.powi(3) / (G * smbh_mass)).sqrt();
+    // part of: let period = 2.0 * PI * (semi.powi(3) / (G_SI * smbh_mass)).sqrt();
 
     if let Ok(orbiter_mass_arr) = orbiter_mass_obj.extract::<PyReadonlyArray1<f64>>() {
 

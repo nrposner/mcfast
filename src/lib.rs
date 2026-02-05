@@ -2,7 +2,6 @@ use pyo3::prelude::*;
 
 mod tools;
 mod accelerants;
-mod constants;
 
 use accelerants::{
     cubes::{encounters_new_orba_ecc, cubic_y_root_cardano, cubic_finite_step_root_cardano, transition_physical_as_el},

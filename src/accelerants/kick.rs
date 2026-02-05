@@ -1,8 +1,7 @@
-
 use pyo3::prelude::*;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 
-use crate::{accelerants::luminosity::si_from_r_g, constants::G};
+use crate::accelerants::{FloatArray1, G_SI, luminosity::si_from_r_g};
 
 #[allow(clippy::type_complexity)]
 #[allow(clippy::too_many_arguments)]
@@ -16,7 +15,7 @@ pub fn analytical_kick_velocity_helper<'py>(
     spin_angle1_arr: PyReadonlyArray1<f64>,
     spin_angle2_arr: PyReadonlyArray1<f64>,
     angle_arr: PyReadonlyArray1<f64>,
-) -> Bound<'py, PyArray1<f64>> {
+) -> FloatArray1<'py> {
     
     let m1_slice = mass1_arr.as_slice().unwrap();
     let m2_slice = mass2_arr.as_slice().unwrap();
@@ -111,7 +110,7 @@ pub fn merged_orb_ecc_helper<'py>(
     bin_orbs_arr: PyReadonlyArray1<f64>,
     v_kick_arr: PyReadonlyArray1<f64>,
     smbh_mass: f64,
-) -> Bound<'py, PyArray1<f64>> { 
+) -> FloatArray1<'py> { 
 
     let bin_orbs_slice = bin_orbs_arr.as_slice().unwrap();
     let v_kick_slice = v_kick_arr.as_slice().unwrap();
@@ -126,7 +125,7 @@ pub fn merged_orb_ecc_helper<'py>(
         let orbs_a_units = si_from_r_g(smbh_mass, *bin_orb);
 
         // under the assumption that the output here is in m/s, since G is in SI 
-        let v_kep = ((G * smbh_mass / orbs_a_units).sqrt()) / 1000.0; // turn to km/s
+        let v_kep = ((G_SI * smbh_mass / orbs_a_units).sqrt()) / 1000.0; // turn to km/s
 
         let merged_ecc = v_kick/v_kep;
 

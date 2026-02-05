@@ -4,12 +4,10 @@ use pyo3::prelude::*;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use crate::accelerants::luminosity::si_from_r_g;
 
-const M_SUN_KG: f64 = 1.9884099e30;  // Solar mass in kg
-const R_SUN_M: f64 = 6.957e8;
-const C_SI: f64 = 299792460.0;     // Speed of light in m/s
-const G_SI: f64 = 6.67430e-11;     // Gravitational constant in m^3/(kg s^2)
-const L_SUN_W: f64 = 3.828e26;       // watts
-const YR_S: f64 = 3.15576e7;         // seconds per Julian year
+// const M_SUN_KG: f64 = 1.9884099e30;  // Solar mass in kg
+// const C_SI: f64 = 299792460.0;     // Speed of light in m/s
+// const G_SI: f64 = 6.67430e-11;     // Gravitational constant in m^3/(kg s^2)
+use crate::accelerants::{C_SI, FloatArray1, G_SI, L_SUN_W, M_SUN_KG, R_SUN_M, YR_S};
 
 #[pyfunction]
 pub fn star_wind_mass_loss_helper<'py>(
@@ -85,7 +83,7 @@ pub fn accrete_star_mass_helper<'py>(
     disk_density_arr: PyReadonlyArray1<f64>,
     timestep_duration_yr: f64,
     // r_g_in_meters: f64,
-) -> (Bound<'py, PyArray1<f64>>, f64, f64) {
+) -> (FloatArray1<'py>, f64, f64) {
     let disk_star_pro_masses_slice = disk_star_pro_masses_arr.as_slice().unwrap();
     let disk_star_pro_orbs_slice = disk_star_pro_orbs_arr.as_slice().unwrap();
     let sound_speed_slice = sound_speed_arr.as_slice().unwrap();

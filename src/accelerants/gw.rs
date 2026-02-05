@@ -2,10 +2,7 @@ use pyo3::{exceptions::PyValueError, prelude::*};
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 
 use std::f64::consts::PI;
-const M_SUN_KG: f64 = 1.9884099e30;  // Solar mass in kg
-const C_SI: f64 = 299792460.0;     // Speed of light in m/s
-const G_SI: f64 = 6.67430e-11;     // Gravitational constant in m^3/(kg s^2)
-const MPC_SI: f64 = 3.08568e22; // number of meters in a megaparsec
+use crate::accelerants::{C_SI, FloatArray1, G_SI, M_SUN_KG, MPC_SI};
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
@@ -19,7 +16,7 @@ pub fn gw_strain_helper<'py>(
     smbh_mass: f64, 
     agn_redshift: f64,
     flag_include_old_gw_freq: bool, // defaults to true?
-) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+) -> PyResult<(FloatArray1<'py>, FloatArray1<'py>)> {
 
 
     if let Ok(mass_1_arr) = mass_1_obj.extract::<PyReadonlyArray1<f64>>() {
