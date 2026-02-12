@@ -4,7 +4,7 @@ use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use std::f64::consts::PI;
 use crate::accelerants::{C_SI, FloatArray1, G_SI, M_SUN_KG, MPC_SI};
 
-#[pyfunction]
+#[pyfunction(signature=(mass_1_obj, mass_2_arr, obj_sep_arr, timestep_duration_yr, old_gw_freq_arr, smbh_mass, agn_redshift, flag_include_old_gw_freq))]
 pub fn gw_strain_helper<'py>(
     py: Python<'py>,
     mass_1_obj: &Bound<'_, PyAny>, // PyReadonlyArray1<f64>,  
