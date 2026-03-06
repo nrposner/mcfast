@@ -25,9 +25,6 @@ fn mcfast(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(merged_orb_ecc_helper, m)?)?;
     m.add_function(wrap_pyfunction!(cubic_y_root_cardano, m)?)?;
     m.add_function(wrap_pyfunction!(transition_physical_as_el, m)?)?;
-    // m.add_function(wrap_pyfunction!(continuous_broken_powerlaw, m)?)?;
-    // m.add_function(wrap_pyfunction!(dual_powerlaw, m)?)?;
-    // m.add_function(wrap_pyfunction!(dual_powerlaw_with_grid, m)?)?;
     m.add_function(wrap_pyfunction!(generate_r, m)?)?;
     m.add_function(wrap_pyfunction!(tau_ecc_dyn_helper, m)?)?;
     m.add_function(wrap_pyfunction!(tau_inc_dyn_helper, m)?)?;
