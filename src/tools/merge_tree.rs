@@ -447,7 +447,7 @@ impl MergeForest {
                 return cached;
             }
 
-            let gen = match nodes[idx].parents {
+            let generation = match nodes[idx].parents {
                 None => 0, // Leaf node
                 Some((p1, p2)) => {
                     let g1 = compute_gen(nodes, p1, cache);
@@ -456,8 +456,8 @@ impl MergeForest {
                 }
             };
 
-            cache.insert(idx, gen);
-            gen
+            cache.insert(idx, generation);
+            generation
         }
 
         let mut cache = HashMap::new();
