@@ -162,7 +162,7 @@ pub fn encounters_prograde_sweep_helper<'py>(
 
                     if chance[[circ_rel_idx, ecc_rel_idx]] < prob_enc {
                         // Kick the circular particle into eccentricity
-                        out_orbs_ecc[circ_orig] = delta_energy_strong * 1.0001;
+                        out_orbs_ecc[circ_orig] = delta_energy_strong;
                         out_orbs_a[circ_orig]  *= 1.0 + delta_energy_strong;
                         if out_orbs_a[circ_orig] >= disk_radius_outer {
                             out_orbs_a[circ_orig] =
