@@ -1,4 +1,4 @@
-# McFAST v0.1.6
+# McFAST v0.1.7
 
 Utilities and accelerated functions designed for use by the McFACTS team at CUNY.
 
@@ -12,6 +12,7 @@ torque_mig_timescale_helper
 generate_r
 shock_luminosity_helper
 jet_luminosity_helper
+encounters_prograde_sweep_helper
 
 Functions currently in testing for integration:
 star_wind_mass_loss_helper
