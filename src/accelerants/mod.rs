@@ -11,6 +11,7 @@ pub mod torque;
 pub mod star_mass;
 pub mod gw;
 pub mod baruteau;
+pub mod units;
 
 use pyo3::prelude::*;
 use numpy::PyArray1;
@@ -30,3 +31,9 @@ pub const MPC_SI: f64 = 3.08568e22; // number of meters in a megaparsec
 pub const L_SUN_W: f64 = 3.828e26;       // watts
 pub const YR_S: f64 = 3.15576e7;         // seconds per Julian year
 pub const R_SUN_M: f64 = 6.957e8;
+
+
+// const KG_TO_SOL: f64 = 1.9884099e+30;
+const EARTH_TO_SOL: f64 = 1.9884099e+30 / 5.9721679e+24;
+const JUPITER_TO_SOL: f64 = 1.9884099e+30 / 1.8981246e+27;
+

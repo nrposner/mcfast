@@ -14,6 +14,7 @@ use accelerants::{
     gw::gw_strain_helper,
     star_mass::{star_wind_mass_loss_helper, accrete_star_mass_helper},
     prograde::encounters_prograde_sweep_helper,
+    units::si_from_r_g_helper,
 };
 use tools::merge_tree::MergeForest;
 
@@ -38,6 +39,7 @@ fn mcfast(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(accrete_star_mass_helper, m)?)?;
     m.add_function(wrap_pyfunction!(encounters_prograde_sweep_helper, m)?)?;
     m.add_function(wrap_pyfunction!(r_schwarzschild_of_m_helper, m)?)?;
+    m.add_function(wrap_pyfunction!(si_from_r_g_helper, m)?)?;
     m.add_class::<MergeForest>()?;
     Ok(())
 }
