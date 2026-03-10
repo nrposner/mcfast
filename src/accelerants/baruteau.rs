@@ -118,32 +118,82 @@ const JUPITER_TO_SOL: f64 = 1.9884099e+30 / 1.8981246e+27;
 /// Scalar version of r_schwarzschild_of_m for python-facing... or should vector version be
 /// default?? 
 #[pyfunction]
-fn r_schwarzschild_of_m(mass: &Bound<'_, PyAny>) -> PyResult<f64> {
+pub fn r_schwarzschild_of_m_helper<'py>(py: Python<'py>, mass: &Bound<'_, PyAny>) -> PyResult<FloatArray1<'py>> {
 
     // need to extract the unit attribute, if it exists
     // and make sure it's in solar masses
 
-    let solmasses = if let Ok(quantity) = extract_scalar_unit(mass) {
-        match quantity.unit {
-            Unit::Kilogram => Ok(quantity.value * KG_TO_SOL),
-            Unit::EarthMass => Ok(quantity.value * EARTH_TO_SOL),
-            Unit::JupiterMass => Ok(quantity.value * JUPITER_TO_SOL),
-            Unit::SolarMass => Ok(quantity.value),
-            _ => Err(
-                pyo3::exceptions::PyValueError::new_err(
-                    format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
-                )
-            )
-        }
+    // let solmass =
+    // if let Ok(quantity) = extract_scalar_unit(mass) {
+    //     match quantity.unit {
+    //         Unit::Kilogram => quantity.value / KG_TO_SOL,
+    //         Unit::EarthMass => quantity.value / EARTH_TO_SOL,
+    //         Unit::JupiterMass => quantity.value / JUPITER_TO_SOL,
+    //         Unit::SolarMass => quantity.value,
+    //         _ => return Err(
+    //             pyo3::exceptions::PyValueError::new_err(
+    //                 format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
+    //             )
+    //         )
+    //     }
+    // } else 
+    if let Ok(quantity) = extract_array_unit(mass) {
+        let out = unsafe {PyArray1::new(py, quantity.value.len().unwrap(), false)};
+        let out_slice = unsafe {out.as_slice_mut().unwrap()};
+
+        let temp = mass.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
+        let mass = temp.as_slice().unwrap();
+
+        mass.iter().enumerate().for_each(|(i, val)| {
+            let solmass = match quantity.unit {
+                Unit::Kilogram => {
+                    val / KG_TO_SOL
+                },
+                Unit::EarthMass => {
+                    val / EARTH_TO_SOL
+                },
+                Unit::JupiterMass => {
+                    val / JUPITER_TO_SOL
+                },
+                Unit::SolarMass => {
+                    *val
+                },
+                _ => panic!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
+                // _ => return Err(
+                //     pyo3::exceptions::PyValueError::new_err(
+                //         format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
+                //     )
+                // )
+
+            };
+
+            let r_sch = (2.0 * G_SI * solmass / (C_SI.powi(2))) * KG_TO_SOL;
+
+            out_slice[i] = r_sch;
+        });
+
+        Ok(out)
+    } else if let Ok(masses) = mass.extract::<PyReadonlyArray1<f64>>() { 
+
+        let out = unsafe {PyArray1::new(py, masses.len().unwrap(), false)};
+        let out_slice = unsafe {out.as_slice_mut().unwrap()};
+
+        // no unit, so just assume it's in solar masses already
+        masses.as_slice().unwrap().iter().enumerate().for_each(|(i, val)| {
+            let r_sch = (2.0 * G_SI * val / (C_SI.powi(2))) * KG_TO_SOL;
+            out_slice[i] = r_sch;
+        });
+
+        Ok(out)
     } else {
-        let solar_mass = mass.extract::<f64>()?;
-        Ok(solar_mass)
-    };
+        panic!("What the hell?")
+    }
 
-    // using kg_to_sol here is equivalent to using .to(u.m) 
-    let r_sch = (2.0 * G_SI * solmasses.unwrap() / (C_SI.powi(2))) * KG_TO_SOL;
 
-    Ok(r_sch)
+    // // using kg_to_sol here is equivalent to using .to(u.m) 
+    // let r_sch = (2.0 * G_SI * solmass / (C_SI.powi(2))) * KG_TO_SOL;
+    //
+    // Ok(r_sch)
 }
 
 
@@ -156,6 +206,10 @@ fn r_schwarzschild_of_m_local(mass: f64) -> f64 {
 
 struct Quantity {
     value: f64,
+    unit: Unit
+}
+struct ArrayQuantity<'py> {
+    value: PyReadonlyArray1<'py, f64>,
     unit: Unit
 }
 
@@ -181,6 +235,56 @@ fn extract_scalar_unit(ob: &Bound<'_, PyAny>) -> PyResult<Quantity> {
     // todo: make more robust, decomposing composite 
     // dimensions into their proper representations
     
+    // Ok(Quantity {value, unit})
+}
+
+
+// fn extract_array_unit<'py>(ob: &Bound<'py, PyAny>) -> PyResult<ArrayQuantity<'py>> {
+//     // extract numerical value
+//     let value = ob.getattr("value")
+//         .expect("Failed to get 'value' attribute")
+//         .extract::<PyReadonlyArray1<f64>>()
+//         .expect("Failed to extract 'value' as f64 array");
+//     // extract unit value
+//     let unit_obj = ob.getattr("unit")
+//         .expect("Failed to get 'unit' attribute");
+//
+//     // use python method to extract string representation
+//     let binding = unit_obj.call_method0("to_string")
+//         .expect("Failed to call 'to_string' on unit object");
+//     let unit_str: &str = binding.extract()
+//         .expect("Failed to extract unit string as &str");
+//
+//     // if we get a match on a simple type, return directly
+//     if let Ok(unit) = parse_unit(unit_str) {
+//         Ok(ArrayQuantity { value, unit })
+//     } else {
+//         panic!("Could not parse unit {unit_str}")
+//     }
+// }
+
+fn extract_array_unit<'py>(ob: &Bound<'py, PyAny>) -> PyResult<ArrayQuantity<'py>> {
+    // extract numerical value
+    let value = ob.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
+    // extract unit value
+    let unit_obj = ob.getattr("unit")?;
+
+    // use python method to extract string representation
+    let binding = unit_obj.call_method0("to_string")?;
+    let unit_str: &str = binding.extract()?;
+
+    // if we get a match on a simple type, return directly
+    if let Ok(unit) = parse_unit(unit_str) {
+        Ok(ArrayQuantity { value, unit })
+    } else {
+        panic!("Could not parse unit {unit_str}")
+    }
+
+    // else, we'll have to decompose and take it apart
+
+    // todo: make more robust, decomposing composite 
+    // dimensions into their proper representations
+
     // Ok(Quantity {value, unit})
 }
 
@@ -221,7 +325,7 @@ fn parse_unit(unit_str: &str) -> PyResult<Unit> {
         b"t" | b"tonne" => return Ok(Unit::MetricTon),
         b"earthMass" | b"M_earth" => return Ok(Unit::EarthMass),
         b"jupiterMass" | b"M_jup" => return Ok(Unit::JupiterMass),
-        b"solMass" | b"Msun" => return Ok(Unit::JupiterMass),
+        b"solMass" | b"Msun" => return Ok(Unit::SolarMass),
 
         _ => {}
     }
