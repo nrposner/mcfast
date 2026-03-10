@@ -112,6 +112,41 @@ fn time_of_orbital_shrinkage(
 // gonna need to get a version of r_schwarzschild_of_m
 
 const KG_TO_SOL: f64 = 1.9884099e+30;
+const EARTH_TO_SOL: f64 = 1.9884099e+30 / 5.9721679e+24;
+const JUPITER_TO_SOL: f64 = 1.9884099e+30 / 1.8981246e+27;
+
+/// Scalar version of r_schwarzschild_of_m for python-facing... or should vector version be
+/// default?? 
+#[pyfunction]
+fn r_schwarzschild_of_m(mass: &Bound<'_, PyAny>) -> PyResult<f64> {
+
+    // need to extract the unit attribute, if it exists
+    // and make sure it's in solar masses
+
+    let solmasses = if let Ok(quantity) = extract_scalar_unit(mass) {
+        match quantity.unit {
+            Unit::Kilogram => Ok(quantity.value * KG_TO_SOL),
+            Unit::EarthMass => Ok(quantity.value * EARTH_TO_SOL),
+            Unit::JupiterMass => Ok(quantity.value * JUPITER_TO_SOL),
+            Unit::SolarMass => Ok(quantity.value),
+            _ => Err(
+                pyo3::exceptions::PyValueError::new_err(
+                    format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
+                )
+            )
+        }
+    } else {
+        let solar_mass = mass.extract::<f64>()?;
+        Ok(solar_mass)
+    };
+
+    // using kg_to_sol here is equivalent to using .to(u.m) 
+    let r_sch = (2.0 * G_SI * solmasses.unwrap() / (C_SI.powi(2))) * KG_TO_SOL;
+
+    Ok(r_sch)
+}
+
+
 /// Assume that the value starts in solar masses
 #[pyfunction]
 fn r_schwarzschild_of_m_local(mass: f64) -> f64 {
@@ -122,6 +157,84 @@ fn r_schwarzschild_of_m_local(mass: f64) -> f64 {
 struct Quantity {
     value: f64,
     unit: Unit
+}
+
+fn extract_scalar_unit(ob: &Bound<'_, PyAny>) -> PyResult<Quantity> {
+    // extract numerical value
+    let value: f64 = ob.getattr("value")?.extract()?;
+    // extract unit value
+    let unit_obj = ob.getattr("unit")?;
+
+    // use python method to extract string representation
+    let binding = unit_obj.call_method0("to_string")?;
+    let unit_str: &str = binding.extract()?;
+
+    // if we get a match on a simple type, return directly
+    if let Ok(unit) = parse_unit(unit_str) {
+        Ok(Quantity { value, unit })
+    } else {
+        panic!("Could not parse unit {unit_str}")
+    }
+
+    // else, we'll have to decompose and take it apart
+
+    // todo: make more robust, decomposing composite 
+    // dimensions into their proper representations
+    
+    // Ok(Quantity {value, unit})
+}
+
+static UNIT_MAP: Map<&'static str, Unit> = phf_map! {
+    // length
+    "m" | "meter" => Unit::Meter,
+    "cm" | "centimeter" => Unit::Centimeter,
+    "au" | "AU" | "astronomical_unit" => Unit::AU,
+    "earthRad" | "R_earth" | "Rearth" => Unit::EarthRad,
+    "jupiterRad" | "R_jup" | "Rjup" | "R_jupiter" | "Rjupiter" => Unit::JupiterRad,
+    "solRad" | "R_sun" | "Rsun" => Unit::SolarRad,
+    "a0" => Unit::BohrRad,
+
+    // mass
+    "kg" | "kilogram" => Unit::Kilogram,
+    "g" | "gram" => Unit::Gram,
+    "t" | "tonne" => Unit::MetricTon,
+    "me" | "M_e" => Unit::ElectronMass,
+    "mp" | "M_p" => Unit::ProtonMass,
+    "u" | "da" | "Dalton" => Unit::Dalton,
+    "earthMass" | "M_earth" | "Mearth" | "geoMass" | "Mgeo" => Unit::EarthMass,
+    "jupiterMass" | "M_jup" | "Mjup" | "M_jupiter" | "Mjupiter" | "jovMass" => Unit::JupiterMass,
+    "solMass" | "M_sun" | "Msun" => Unit::SolarMass,
+
+    // imperial mass units
+    "oz" | "ounce" => Unit::Oz,
+    "lb" | "lbm" | "pound" => Unit::Lb,
+    "slug" => Unit::Slug,
+    "st" | "stone" => Unit::Stone,
+    "ton" => Unit::ImperialTon,
+
+};
+
+fn parse_unit(unit_str: &str) -> PyResult<Unit> {
+    // for really common units, go directly to byte comparison
+    match unit_str.as_bytes() {
+        b"kg" | b"kilogram" => return Ok(Unit::Kilogram),
+        b"t" | b"tonne" => return Ok(Unit::MetricTon),
+        b"earthMass" | b"M_earth" => return Ok(Unit::EarthMass),
+        b"jupiterMass" | b"M_jup" => return Ok(Unit::JupiterMass),
+        b"solMass" | b"Msun" => return Ok(Unit::JupiterMass),
+
+        _ => {}
+    }
+
+    // otherwise fall back to perfect hash
+    // should we remove the common units from the hash?
+    UNIT_MAP.get(unit_str)
+        .copied() // or .cloned() if UnitEnum doesn't impl Copy
+        .ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(
+                format!("Unsupported unit: {}", unit_str)
+            )
+        })
 }
 
 #[derive(Clone, Copy, Debug)]
