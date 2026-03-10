@@ -10,6 +10,7 @@ pub mod tau;
 pub mod torque;
 pub mod star_mass;
 pub mod gw;
+pub mod baruteau;
 
 use pyo3::prelude::*;
 use numpy::PyArray1;

@@ -4,6 +4,7 @@ mod tools;
 mod accelerants;
 
 use accelerants::{
+    baruteau::baruteau_helper,
     cubes::{encounters_new_orba_ecc, cubic_y_root_cardano, cubic_finite_step_root_cardano, transition_physical_as_el},
     powerlaw::generate_r,
     tau::{tau_ecc_dyn_helper, tau_inc_dyn_helper},
@@ -19,6 +20,7 @@ use tools::merge_tree::MergeForest;
 /// A Python module implemented in Rust.
 #[pymodule]
 fn mcfast(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(baruteau_helper, m)?)?;
     m.add_function(wrap_pyfunction!(encounters_new_orba_ecc, m)?)?;
     m.add_function(wrap_pyfunction!(cubic_finite_step_root_cardano, m)?)?;
     m.add_function(wrap_pyfunction!(analytical_kick_velocity_helper, m)?)?;
