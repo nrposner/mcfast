@@ -23,27 +23,17 @@ pub fn si_from_r_g(smbh_mass: f64, distance_rg: f64) -> f64 {
 pub fn si_from_r_g_helper<'py>(
     py: Python<'py>, 
     smbh_mass: f64, 
-    // distance_r_g: PyReadonlyArray1<'py, f64>,
     distance_r_g: &Bound<'_, PyAny>,
 ) -> PyResult<FloatArray1<'py>> {
 
     // need to extract the unit attribute, if it exists
     // and make sure it's in solar masses
+    
+    let smbh_mass_kg = smbh_mass * M_SUN_KG;
 
-    // let solmass =
-    // if let Ok(quantity) = extract_scalar_unit(mass) {
-    //     match quantity.unit {
-    //         Unit::Kilogram => quantity.value / KG_TO_SOL,
-    //         Unit::EarthMass => quantity.value / EARTH_TO_SOL,
-    //         Unit::JupiterMass => quantity.value / JUPITER_TO_SOL,
-    //         Unit::SolarMass => quantity.value,
-    //         _ => return Err(
-    //             pyo3::exceptions::PyValueError::new_err(
-    //                 format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
-    //             )
-    //         )
-    //     }
-    // } else 
+    // Calculate r_g = G * M / c^2
+    let r_g = (G_SI * smbh_mass_kg) / (C_SI * C_SI);
+
     if let Ok(quantity) = extract_array_unit(distance_r_g) {
         let out = unsafe {PyArray1::new(py, quantity.value.len().unwrap(), false)};
         let out_slice = unsafe {out.as_slice_mut().unwrap()};
@@ -74,14 +64,6 @@ pub fn si_from_r_g_helper<'py>(
 
             };
 
-            // let r_sch = (2.0 * G_SI * solmass / (C_SI.powi(2))) * M_SUN_KG;
-
-            let smbh_mass_kg = smbh_mass * M_SUN_KG;
-    
-            // Calculate r_g = G * M / c^2
-            let r_g = (G_SI * smbh_mass_kg) / (C_SI * C_SI);
-
-
             out_slice[i] = solmass * r_g;
         });
 
@@ -93,12 +75,6 @@ pub fn si_from_r_g_helper<'py>(
 
         // no unit, so just assume it's in solar masses already
         masses.as_slice().unwrap().iter().enumerate().for_each(|(i, val)| {
-
-            let smbh_mass_kg = smbh_mass * M_SUN_KG;
-    
-            // Calculate r_g = G * M / c^2
-            let r_g = (G_SI * smbh_mass_kg) / (C_SI * C_SI);
-
             out_slice[i] = val * r_g;
         });
 
@@ -106,18 +82,114 @@ pub fn si_from_r_g_helper<'py>(
 
     // scalar case, because Python hates us 
     } else if let Ok(mass) = distance_r_g.extract::<f64>() {
-        let smbh_mass_kg = smbh_mass * M_SUN_KG;
-
-        // Calculate r_g = G * M / c^2
-        let r_g = (G_SI * smbh_mass_kg) / (C_SI * C_SI);
-
         let out = mass * r_g;
-
         Ok(PyArray1::from_slice(py, &[out]))
-
     } else {
         panic!("What the hell?")
     }
+}
+
+// si_from_r_g and r_g_from_units are the same operation in reverse, we just need to accept
+// different unit types and deal with them.
+#[pyfunction]
+pub fn r_g_from_units_helper<'py>(
+    py: Python<'py>, 
+    smbh_mass: f64, 
+    distance_r_g: &Bound<'_, PyAny>,
+) -> PyResult<FloatArray1<'py>> {
+
+    let smbh_mass_kg = smbh_mass * M_SUN_KG;
+
+    // Calculate r_g = G * M / c^2
+    let r_g = (G_SI * smbh_mass_kg) / (C_SI * C_SI);
+
+    if let Ok(quantity) = extract_array_unit(distance_r_g) {
+        let out = unsafe {PyArray1::new(py, quantity.value.len().unwrap(), false)};
+        let out_slice = unsafe {out.as_slice_mut().unwrap()};
+
+        let temp = distance_r_g.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
+        let distance_r_g = temp.as_slice().unwrap();
+
+        distance_r_g.iter().enumerate().for_each(|(i, val)| {
+            let solmass = match quantity.unit {
+                // what other units??? AU??
+                Unit::Meter => {
+                    *val
+                },
+                _ => panic!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
+                // _ => return Err(
+                //     pyo3::exceptions::PyValueError::new_err(
+                //         format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
+                //     )
+                // )
+
+            };
+
+            out_slice[i] = solmass / r_g;
+        });
+
+        Ok(out)
+    } else if let Ok(masses) = distance_r_g.extract::<PyReadonlyArray1<f64>>() { 
+
+        let out = unsafe {PyArray1::new(py, distance_r_g.len().unwrap(), false)};
+        let out_slice = unsafe {out.as_slice_mut().unwrap()};
+
+        // no unit, so just assume it's in solar masses already
+        masses.as_slice().unwrap().iter().enumerate().for_each(|(i, val)| {
+            out_slice[i] = val / r_g;
+        });
+
+        Ok(out)
+
+    // scalar case, because Python hates us 
+    } else if let Ok(mass) = distance_r_g.extract::<f64>() {
+        let out = mass / r_g;
+        Ok(PyArray1::from_slice(py, &[out]))
+    } else {
+        panic!("What the hell?")
+    }
+
+
+
+// def r_g_from_units(smbh_mass, distance):
+//     """Calculate the SI distance from r_g
+//
+//     Parameters
+//     ----------
+//     smbh_mass : float
+//         Mass [M_sun] of the SMBH
+//     distance_rg : astropy.units.quantity.Quantity
+//         Distances
+//
+//     Returns
+//     -------
+//     distance_rg : numpy.ndarray
+//         Distances [r_g]
+//     """
+//     # Assign units to smbh mass
+//     if hasattr(smbh_mass, 'unit'):
+//         smbh_mass = smbh_mass.to(u.solMass)
+//     else:
+//         smbh_mass = smbh_mass * u.solMass
+//     # convert smbh mass to kg
+//     smbh_mass = smbh_mass.to(u.kg)
+//
+//     # Calculate r_g in SI
+//     r_g = const.G*smbh_mass/(const.c ** 2)
+//     # Calculate distance
+//     distance_rg = distance.to(u.m) / r_g
+//
+//     # Check to make sure units are okay.
+//     assert u.dimensionless_unscaled == distance_rg.unit, \
+//         "distance_rg is not dimensionless. Check your input is a astropy Quantity, not an astropy Unit."
+//     assert np.isfinite(distance_rg).all(), \
+//         "Finite check failure: distance_rg"
+//     assert np.all(distance_rg > 0), \
+//         "Finite check failure: distance_rg"
+//
+//     return distance_rg
+
+
 }
 
 
