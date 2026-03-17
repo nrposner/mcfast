@@ -145,6 +145,18 @@ pub fn r_g_from_units_helper<'py>(
         Ok(out)
 
     // scalar case, because Python hates us 
+    } else if let Ok(quantity) = extract_scalar_unit(distance_r_g) {
+        let solmass = match quantity.unit {
+            Unit::Meter => {
+                quantity.value
+            },
+            _ => panic!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
+        };
+
+        let out = solmass / r_g;
+
+        Ok(PyArray1::from_slice(py, &[out]))
+
     } else if let Ok(mass) = distance_r_g.extract::<f64>() {
         let out = mass / r_g;
         Ok(PyArray1::from_slice(py, &[out]))
