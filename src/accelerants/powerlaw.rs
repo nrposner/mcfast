@@ -36,33 +36,37 @@ pub fn generate_r<'py>(
     let neg_outer = -index_outer;
     let inv_crit = 1.0 / crit_radius;
 
-    // 3. Parallel fused generation
-    // We zip the two output slices together to write to them simultaneously
-    r_slice.par_iter_mut()
-        .zip(y_slice.par_iter_mut())
+
+    let split_idx = ((crit_radius - start) / step).ceil() as usize;
+    let split_idx = split_idx.min(num_points);
+
+    // removing the if/else, even though it should be pretty branch-predictor friendly
+    // this allows us to do more auto-vectorization and get a decent speedup
+
+    // Inner region [0..split_idx]
+    r_slice[..split_idx].par_iter_mut()
+        .zip(y_slice[..split_idx].par_iter_mut())
         .enumerate()
         .for_each(|(i, (r_out, y_out))| {
-            // Calculate grid point
             let val = start + (i as f64 * step);
             *r_out = val;
-
-            // Calculate powerlaw immediately (value is hot in register)
-            // the inner if/else check is always the same for each function call,
-            // so the branch predictor should be fine, but double check
-            if val <= crit_radius {
-                if volume_scaling {
-                    let shell_volume = PI * val.powi(2) * step;
-                    *y_out = (val * inv_crit).powf(neg_inner) * shell_volume;
-                } else {
-                    *y_out = (val * inv_crit).powf(neg_inner);
-                }
-            } else if volume_scaling {
-                let shell_volume = PI * val.powi(2) * step;
-                *y_out = (val * inv_crit).powf(neg_outer) * shell_volume;
-            } else {
-                *y_out = (val * inv_crit).powf(neg_outer);
-            }
+            let base = val * inv_crit;
+            let p = base.powf(neg_inner);
+            *y_out = if volume_scaling { PI * val * val * step * p } else { p };
         });
+
+    // Outer region [split_idx..num_points]
+    r_slice[split_idx..].par_iter_mut()
+        .zip(y_slice[split_idx..].par_iter_mut())
+        .enumerate()
+        .for_each(|(i, (r_out, y_out))| {
+            let val = start + ((i + split_idx) as f64 * step);
+            *r_out = val;
+            let base = val * inv_crit;
+            let p = base.powf(neg_outer);
+            *y_out = if volume_scaling { PI * val * val * step * p } else { p };
+        });
+
 
     // need to construct y first to get the sum and normalize, has to be a second pass
     let y_sum: f64 = y_slice.par_iter().sum();
