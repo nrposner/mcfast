@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use phf::{Map, phf_map};
 
-use crate::accelerants::{C_SI, EARTH_TO_SOL, FloatArray1, G_SI, JUPITER_TO_SOL, M_SUN_KG};
+use crate::accelerants::{C_SI, EARTH_TO_SOL, FloatArray1, G_SI, JUPITER_TO_SOL, M_SUN_G, M_SUN_KG};
 
 /// Calculate the gravitational radius r_g in SI units (meters)
 /// This matches the Python si_from_r_g function behavior
@@ -43,6 +43,9 @@ pub fn si_from_r_g_helper<'py>(
 
         distance_r_g.iter().enumerate().for_each(|(i, val)| {
             let solmass = match quantity.unit {
+                Unit::Gram => {
+                    val / M_SUN_G
+                }
                 Unit::Kilogram => {
                     val / M_SUN_KG
                 },

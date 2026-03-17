@@ -25,6 +25,7 @@ pub const C_CGS: f64 = 2.99792458e10;
 pub const _M_SUN_CGS: f64 = 1.98847e33;
 
 pub const M_SUN_KG: f64 = 1.9884099e30;  // Solar mass in kg
+pub const M_SUN_G: f64 = 1.9884099e30 * 1.0e3;  // Solar mass in g
 pub const C_SI: f64 = 299792460.0;     // Speed of light in m/s
 pub const G_SI: f64 = 6.67430e-11;     // Gravitational constant in m^3/(kg s^2)
 pub const MPC_SI: f64 = 3.08568e22; // number of meters in a megaparsec
