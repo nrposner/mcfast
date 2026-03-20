@@ -165,48 +165,57 @@ pub fn r_g_from_units_helper<'py>(
     }
 
 
+/// Scalar version of r_schwarzschild_of_m for python-facing... or should vector version be
+/// default?? 
+#[pyfunction]
+pub fn r_schwarzschild_of_m_helper<'py>(py: Python<'py>, mass: &Bound<'_, PyAny>) -> PyResult<FloatArray1<'py>> {
 
-// def r_g_from_units(smbh_mass, distance):
-//     """Calculate the SI distance from r_g
-//
-//     Parameters
-//     ----------
-//     smbh_mass : float
-//         Mass [M_sun] of the SMBH
-//     distance_rg : astropy.units.quantity.Quantity
-//         Distances
-//
-//     Returns
-//     -------
-//     distance_rg : numpy.ndarray
-//         Distances [r_g]
-//     """
-//     # Assign units to smbh mass
-//     if hasattr(smbh_mass, 'unit'):
-//         smbh_mass = smbh_mass.to(u.solMass)
-//     else:
-//         smbh_mass = smbh_mass * u.solMass
-//     # convert smbh mass to kg
-//     smbh_mass = smbh_mass.to(u.kg)
-//
-//     # Calculate r_g in SI
-//     r_g = const.G*smbh_mass/(const.c ** 2)
-//     # Calculate distance
-//     distance_rg = distance.to(u.m) / r_g
-//
-//     # Check to make sure units are okay.
-//     assert u.dimensionless_unscaled == distance_rg.unit, \
-//         "distance_rg is not dimensionless. Check your input is a astropy Quantity, not an astropy Unit."
-//     assert np.isfinite(distance_rg).all(), \
-//         "Finite check failure: distance_rg"
-//     assert np.all(distance_rg > 0), \
-//         "Finite check failure: distance_rg"
-//
-//     return distance_rg
+    // extract the attribute if it exists, and if so, make sure it's denominated in solar masses
+    if let Ok(quantity) = extract_array_unit(mass) {
+        let out = unsafe {PyArray1::new(py, quantity.value.len().unwrap(), false)};
+        let out_slice = unsafe {out.as_slice_mut().unwrap()};
 
+        let temp = mass.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
+        let mass = temp.as_slice().unwrap();
 
+        let coeff = match quantity.unit {
+            Unit::Gram => { Ok(M_SUN_G) }
+            Unit::Kilogram => { Ok(M_SUN_KG) },
+            Unit::EarthMass => { Ok(EARTH_TO_SOL) },
+            Unit::JupiterMass => { Ok(JUPITER_TO_SOL) },
+            Unit::SolarMass => { Ok(1.0) },
+            _ => Err(
+                pyo3::exceptions::PyValueError::new_err(
+                    format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
+                )
+            )
+        }?;
+
+        mass.iter().enumerate().for_each(|(i, val)| {
+            let solmass = val / coeff;
+            let r_sch = (2.0 * G_SI * solmass / (C_SI.powi(2))) * M_SUN_KG;
+            out_slice[i] = r_sch;
+        });
+
+        Ok(out)
+    // otherwise, assume it's a numpy float array
+    } else if let Ok(masses) = mass.extract::<PyReadonlyArray1<f64>>() { 
+
+        let out = unsafe {PyArray1::new(py, masses.len().unwrap(), false)};
+        let out_slice = unsafe {out.as_slice_mut().unwrap()};
+
+        // no unit, so just assume it's in solar masses already
+        masses.as_slice().unwrap().iter().enumerate().for_each(|(i, val)| {
+            let r_sch = (2.0 * G_SI * val / (C_SI.powi(2))) * M_SUN_KG;
+            out_slice[i] = r_sch;
+        });
+
+        Ok(out)
+    // otherwise, we've received an invalid input type
+    } else {
+        panic!("Unsupported input type for r_schwarzschild_of_m: mass input must be an array")
+    }
 }
-
 
 pub struct Quantity {
     pub value: f64,

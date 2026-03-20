@@ -111,93 +111,9 @@ fn time_of_orbital_shrinkage(
 // gonna need to get a version of r_schwarzschild_of_m
 
 
-/// Scalar version of r_schwarzschild_of_m for python-facing... or should vector version be
-/// default?? 
-#[pyfunction]
-pub fn r_schwarzschild_of_m_helper<'py>(py: Python<'py>, mass: &Bound<'_, PyAny>) -> PyResult<FloatArray1<'py>> {
-
-    // need to extract the unit attribute, if it exists
-    // and make sure it's in solar masses
-
-    // let solmass =
-    // if let Ok(quantity) = extract_scalar_unit(mass) {
-    //     match quantity.unit {
-    //         Unit::Kilogram => quantity.value / KG_TO_SOL,
-    //         Unit::EarthMass => quantity.value / EARTH_TO_SOL,
-    //         Unit::JupiterMass => quantity.value / JUPITER_TO_SOL,
-    //         Unit::SolarMass => quantity.value,
-    //         _ => return Err(
-    //             pyo3::exceptions::PyValueError::new_err(
-    //                 format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
-    //             )
-    //         )
-    //     }
-    // } else 
-    if let Ok(quantity) = extract_array_unit(mass) {
-        let out = unsafe {PyArray1::new(py, quantity.value.len().unwrap(), false)};
-        let out_slice = unsafe {out.as_slice_mut().unwrap()};
-
-        let temp = mass.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
-        let mass = temp.as_slice().unwrap();
-
-        mass.iter().enumerate().for_each(|(i, val)| {
-            let solmass = match quantity.unit {
-                Unit::Gram => {
-                    val / M_SUN_G
-                }
-                Unit::Kilogram => {
-                    val / M_SUN_KG
-                },
-                Unit::EarthMass => {
-                    val / EARTH_TO_SOL
-                },
-                Unit::JupiterMass => {
-                    val / JUPITER_TO_SOL
-                },
-                Unit::SolarMass => {
-                    *val
-                },
-                _ => panic!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
-                // _ => return Err(
-                //     pyo3::exceptions::PyValueError::new_err(
-                //         format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
-                //     )
-                // )
-
-            };
-
-            let r_sch = (2.0 * G_SI * solmass / (C_SI.powi(2))) * M_SUN_KG;
-
-            out_slice[i] = r_sch;
-        });
-
-        Ok(out)
-    } else if let Ok(masses) = mass.extract::<PyReadonlyArray1<f64>>() { 
-
-        let out = unsafe {PyArray1::new(py, masses.len().unwrap(), false)};
-        let out_slice = unsafe {out.as_slice_mut().unwrap()};
-
-        // no unit, so just assume it's in solar masses already
-        masses.as_slice().unwrap().iter().enumerate().for_each(|(i, val)| {
-            let r_sch = (2.0 * G_SI * val / (C_SI.powi(2))) * M_SUN_KG;
-            out_slice[i] = r_sch;
-        });
-
-        Ok(out)
-    } else {
-        panic!("What the hell?")
-    }
-
-
-    // // using kg_to_sol here is equivalent to using .to(u.m) 
-    // let r_sch = (2.0 * G_SI * solmass / (C_SI.powi(2))) * KG_TO_SOL;
-    //
-    // Ok(r_sch)
-}
 
 
 /// Assume that the value starts in solar masses
-#[pyfunction]
 fn r_schwarzschild_of_m_local(mass: f64) -> f64 {
     // using kg_to_sol here is equivalent to using .to(u.m) 
     (2.0 * G_SI * mass / (C_SI.powi(2))) * M_SUN_KG
