@@ -4,7 +4,7 @@ mod tools;
 mod accelerants;
 
 use accelerants::{
-    baruteau::{baruteau_helper, r_schwarzschild_of_m_helper},
+    baruteau::baruteau_helper,
     cubes::{encounters_new_orba_ecc, cubic_y_root_cardano, cubic_finite_step_root_cardano, transition_physical_as_el},
     powerlaw::generate_r,
     tau::{tau_ecc_dyn_helper, tau_inc_dyn_helper},
@@ -14,7 +14,7 @@ use accelerants::{
     gw::gw_strain_helper,
     star_mass::{star_wind_mass_loss_helper, accrete_star_mass_helper},
     prograde::encounters_prograde_sweep_helper,
-    units::{si_from_r_g_helper, r_g_from_units_helper},
+    units::{si_from_r_g_helper, r_g_from_units_helper, r_schwarzschild_of_m_helper},
 };
 use tools::merge_tree::MergeForest;
 
