@@ -41,32 +41,21 @@ pub fn si_from_r_g_helper<'py>(
         let temp = distance_r_g.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
         let distance_r_g = temp.as_slice().unwrap();
 
+        let coeff = match quantity.unit {
+            Unit::Gram => { Ok(M_SUN_G) }
+            Unit::Kilogram => { Ok(M_SUN_KG) },
+            Unit::EarthMass => { Ok(EARTH_TO_SOL) },
+            Unit::JupiterMass => { Ok(JUPITER_TO_SOL) },
+            Unit::SolarMass => { Ok(1.0) },
+            _ => Err(
+                pyo3::exceptions::PyValueError::new_err(
+                    format!("Unsupported unit for si_from_r_g: {:?}", quantity.unit)
+                )
+            )
+        }?;
+
         distance_r_g.iter().enumerate().for_each(|(i, val)| {
-            let solmass = match quantity.unit {
-                Unit::Gram => {
-                    val / M_SUN_G
-                }
-                Unit::Kilogram => {
-                    val / M_SUN_KG
-                },
-                Unit::EarthMass => {
-                    val / EARTH_TO_SOL
-                },
-                Unit::JupiterMass => {
-                    val / JUPITER_TO_SOL
-                },
-                Unit::SolarMass => {
-                    *val
-                },
-                _ => panic!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
-                // _ => return Err(
-                //     pyo3::exceptions::PyValueError::new_err(
-                //         format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
-                //     )
-                // )
-
-            };
-
+            let solmass = val / coeff;
             out_slice[i] = solmass * r_g;
         });
 
@@ -113,22 +102,18 @@ pub fn r_g_from_units_helper<'py>(
         let temp = distance_r_g.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
         let distance_r_g = temp.as_slice().unwrap();
 
+        // since at the moment we only accept meters
+        match quantity.unit {
+            Unit::Meter => { }
+            _ => return Err(
+                pyo3::exceptions::PyValueError::new_err(
+                    format!("Unsupported unit for r_g_from_units: {:?}", quantity.unit)
+                )
+            )
+        };
+
         distance_r_g.iter().enumerate().for_each(|(i, val)| {
-            let solmass = match quantity.unit {
-                // what other units??? AU??
-                Unit::Meter => {
-                    *val
-                },
-                _ => panic!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
-                // _ => return Err(
-                //     pyo3::exceptions::PyValueError::new_err(
-                //         format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
-                //     )
-                // )
-
-            };
-
-            out_slice[i] = solmass / r_g;
+            out_slice[i] = val / r_g;
         });
 
         Ok(out)
@@ -150,7 +135,7 @@ pub fn r_g_from_units_helper<'py>(
             Unit::Meter => {
                 quantity.value
             },
-            _ => panic!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
+            _ => panic!("Unsupported unit for r_g_from_units: {:?}", quantity.unit)
         };
 
         let out = solmass / r_g;
@@ -161,8 +146,9 @@ pub fn r_g_from_units_helper<'py>(
         let out = mass / r_g;
         Ok(PyArray1::from_slice(py, &[out]))
     } else {
-        panic!("What the hell?")
+        panic!("distance_r_g could not be extracted into a valid type")
     }
+}
 
 
 /// Scalar version of r_schwarzschild_of_m for python-facing... or should vector version be
@@ -316,6 +302,7 @@ pub fn parse_unit(unit_str: &str) -> PyResult<Unit> {
         b"earthMass" | b"M_earth" => return Ok(Unit::EarthMass),
         b"jupiterMass" | b"M_jup" => return Ok(Unit::JupiterMass),
         b"solMass" | b"Msun" => return Ok(Unit::SolarMass),
+        b"m" | b"meter" => return Ok(Unit::Meter),
 
         _ => {}
     }
