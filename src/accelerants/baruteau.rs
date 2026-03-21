@@ -2,7 +2,7 @@
 use pyo3::prelude::*;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 
-use crate::accelerants::{C_SI, EARTH_TO_SOL, FloatArray1, G_SI, JUPITER_TO_SOL, M_SUN_G, M_SUN_KG, luminosity::si_from_r_g, units::*};
+use crate::accelerants::{C_SI, FloatArray1, G_SI, M_SUN_KG, units::si_from_r_g};
 
 #[pyfunction]
 pub fn baruteau_helper<'py>(

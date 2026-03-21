@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 
-use crate::accelerants::{FloatArray1, G_SI, M_SUN_KG, luminosity::si_from_r_g};
+use crate::accelerants::{FloatArray1, G_SI, M_SUN_KG, units::si_from_r_g};
 
 #[pyfunction]
 pub fn analytical_kick_velocity_helper<'py>(

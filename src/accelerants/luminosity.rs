@@ -14,20 +14,7 @@ use pyo3::prelude::*;
 use std::f64::consts::PI;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 
-use crate::accelerants::{C_CGS, C_SI, FloatArray1, G_CGS, G_SI, M_SUN_KG};
-
-/// Calculate the gravitational radius r_g in SI units (meters)
-/// This matches the Python si_from_r_g function behavior
-pub fn si_from_r_g(smbh_mass: f64, distance_rg: f64) -> f64 {
-    // smbh_mass is in solar masses, convert to kg
-    let smbh_mass_kg = smbh_mass * M_SUN_KG;
-    
-    // Calculate r_g = G * M / c^2
-    let r_g = (G_SI * smbh_mass_kg) / (C_SI * C_SI);
-    
-    // Calculate distance in meters
-    distance_rg * r_g
-}
+use crate::accelerants::{C_CGS, FloatArray1, G_CGS, M_SUN_KG, units::si_from_r_g};
 
 #[pyfunction]
 pub fn shock_luminosity_helper<'py>(
