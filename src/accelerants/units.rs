@@ -286,6 +286,12 @@ pub fn r_schwarzschild_of_m_helper<'py>(py: Python<'py>, mass: &Bound<'_, PyAny>
     }
 }
 
+/// Assume that the value starts in solar masses
+pub fn r_schwarzschild_of_m_local(mass: f64) -> f64 {
+    // using kg_to_sol here is equivalent to using .to(u.m) 
+    (2.0 * G_SI * mass / (C_SI.powi(2))) * M_SUN_KG
+}
+
 pub struct Quantity {
     pub value: f64,
     pub unit: Unit

@@ -2,7 +2,7 @@
 use pyo3::prelude::*;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 
-use crate::accelerants::{C_SI, FloatArray1, G_SI, M_SUN_KG, units::si_from_r_g};
+use crate::accelerants::{C_SI, FloatArray1, G_SI, M_SUN_KG, units::{si_from_r_g, r_schwarzschild_of_m_local}};
 
 #[pyfunction]
 pub fn baruteau_helper<'py>(
@@ -113,9 +113,4 @@ fn time_of_orbital_shrinkage(
 
 
 
-/// Assume that the value starts in solar masses
-fn r_schwarzschild_of_m_local(mass: f64) -> f64 {
-    // using kg_to_sol here is equivalent to using .to(u.m) 
-    (2.0 * G_SI * mass / (C_SI.powi(2))) * M_SUN_KG
-}
 
