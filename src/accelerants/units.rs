@@ -1,4 +1,4 @@
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyTypeError, prelude::*};
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use phf::{Map, phf_map};
 
@@ -6,7 +6,7 @@ use crate::accelerants::{C_SI, EARTH_TO_SOL, FloatArray1, G_SI, JUPITER_TO_SOL, 
 
 /// Calculate the gravitational radius r_g in SI units (meters)
 /// This matches the Python si_from_r_g function behavior
-pub fn si_from_r_g(smbh_mass: f64, distance_rg: f64) -> f64 {
+pub fn _si_from_r_g(smbh_mass: f64, distance_r_g: f64) -> f64 {
     // smbh_mass is in solar masses, convert to kg
     let smbh_mass_kg = smbh_mass * M_SUN_KG;
     
@@ -14,33 +14,37 @@ pub fn si_from_r_g(smbh_mass: f64, distance_rg: f64) -> f64 {
     let r_g = (G_SI * smbh_mass_kg) / (C_SI * C_SI);
     
     // Calculate distance in meters
-    distance_rg * r_g
+    distance_r_g * r_g
 }
 
 
-
 #[pyfunction]
+/// Calculates the SI distance in meters from the mass and distance_r_g of an SMBH using
+///
+/// distance_r_g * (G_SI * mass) / (C_SI * C_SI)
+///
+/// `mass` must be a single value (scalar or 1-array) with AstroPy units or unitless and
+/// denominated in solar masses
+/// `distance_r_g` may be a Quantity array of AstroPy units, a unitless NumPy array, or a unitless scalar. In the absece of units, distance_r_g is assumed to be denominated in gravitational radii
 pub fn si_from_r_g_helper<'py>(
     py: Python<'py>, 
-    smbh_mass: f64, 
-    distance_r_g: &Bound<'_, PyAny>,
+    smbh_mass: &Bound<'_, PyAny>, 
+    distance_r_g: &Bound<'_, PyAny>, // either unitless scalar or unitless array
 ) -> PyResult<FloatArray1<'py>> {
-
-    // need to extract the unit attribute, if it exists
-    // and make sure it's in solar masses
-    
-    let smbh_mass_kg = smbh_mass * M_SUN_KG;
-
-    // Calculate r_g = G * M / c^2
-    let r_g = (G_SI * smbh_mass_kg) / (C_SI * C_SI);
-
-    if let Ok(quantity) = extract_array_unit(distance_r_g) {
-        let out = unsafe {PyArray1::new(py, quantity.value.len().unwrap(), false)};
-        let out_slice = unsafe {out.as_slice_mut().unwrap()};
-
-        let temp = distance_r_g.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
-        let distance_r_g = temp.as_slice().unwrap();
-
+    // take the mass, assumed to be a scalar denominated in solar masses, and convert it to
+    // kilograms
+    let smbh_mass_kg = if let Ok(solarmass) = smbh_mass.extract::<f64>() {
+        // if there is no associated unit, assume mass is denominated in solar masses, transform
+        // into kilograms for calculations
+        solarmass * M_SUN_KG
+    } else if let Ok(solarmasses) = smbh_mass.extract::<PyReadonlyArray1<f64>>() {
+        // if there is no associated unit, assume mass is denominated in solar masses, transform
+        // into kilograms for calculations
+        // and we just need the first value, as this is meant to be a scalar anyway
+        let solarmass = solarmasses.as_slice().unwrap().first().unwrap();
+        solarmass * M_SUN_KG
+    } else if let Ok(quantity) = extract_scalar_unit(smbh_mass) {
+        // there is some unit, transform to solar masses...
         let coeff = match quantity.unit {
             Unit::Gram => { Ok(M_SUN_G) }
             Unit::Kilogram => { Ok(M_SUN_KG) },
@@ -48,20 +52,81 @@ pub fn si_from_r_g_helper<'py>(
             Unit::JupiterMass => { Ok(JUPITER_TO_SOL) },
             Unit::SolarMass => { Ok(1.0) },
             _ => Err(
-                pyo3::exceptions::PyValueError::new_err(
+                PyTypeError::new_err(
                     format!("Unsupported unit for si_from_r_g: {:?}", quantity.unit)
                 )
             )
         }?;
 
-        distance_r_g.iter().enumerate().for_each(|(i, val)| {
+        // ...then to kilograms
+        let solarmass = quantity.value / coeff;
+        solarmass * M_SUN_KG
+        // is this a bit silly? Yes, but that's also what the original function did, and
+        // it makes things a bit easier to understand
+    } else if let Ok(array_quantity) = extract_array_unit(smbh_mass) {
+        // there is some unit, transform to solar masses...
+        let coeff = match array_quantity.unit {
+            Unit::Gram => { Ok(M_SUN_G) }
+            Unit::Kilogram => { Ok(M_SUN_KG) },
+            Unit::EarthMass => { Ok(EARTH_TO_SOL) },
+            Unit::JupiterMass => { Ok(JUPITER_TO_SOL) },
+            Unit::SolarMass => { Ok(1.0) },
+            _ => Err(
+                PyTypeError::new_err(
+                    format!("Unsupported unit for si_from_r_g: {:?}", array_quantity.unit)
+                )
+            )
+        }?;
+
+        // ...then to kilograms
+        // since this is meant to be a scalar, we only want to take the first element, 
+        let solarmass = array_quantity.values.as_slice().unwrap().first().unwrap() / coeff;
+        solarmass * M_SUN_KG
+        // is this a bit silly? Yes, but that's also what the original function did, and
+        // it makes things a bit easier to understand
+    } else {
+        return Err(
+            PyTypeError::new_err(
+                "Invalid type for smbh_mass: must be either a unitless scalar or AstroPy Quantity scalar".to_string()
+            )
+        )
+    };
+
+    // Calculate r_g = G * M / c^2
+    let r_g = (G_SI * smbh_mass_kg) / (C_SI * C_SI);
+
+    // extract the type and unit of distance_r_g, which may be an AstroPy Quantity array, a
+    // unitless NumPy numerical array, or a unitless scalar
+    // in the first case, attempt to extract it into a value and 
+    if let Ok(array_quantity) = extract_array_unit(distance_r_g) {
+        // allocate the output array up front
+        let out = unsafe {PyArray1::new(py, array_quantity.values.len().unwrap(), false)};
+        let out_slice = unsafe {out.as_slice_mut().unwrap()};
+
+        // acquire the appropriate conversion coefficient to turn r_g into an SI 
+        let coeff = match array_quantity.unit {
+            Unit::Gram => { Ok(M_SUN_G) }
+            Unit::Kilogram => { Ok(M_SUN_KG) },
+            Unit::EarthMass => { Ok(EARTH_TO_SOL) },
+            Unit::JupiterMass => { Ok(JUPITER_TO_SOL) },
+            Unit::SolarMass => { Ok(1.0) },
+            _ => Err(
+                PyTypeError::new_err(
+                    format!("Unsupported unit for si_from_r_g: {:?}", array_quantity.unit)
+                )
+            )
+        }?;
+
+        // calculate the value in SI meters
+        array_quantity.values.as_slice().unwrap().iter().enumerate().for_each(|(i, val)| {
             let solmass = val / coeff;
             out_slice[i] = solmass * r_g;
         });
 
         Ok(out)
+    // in the second case, it's a unitless numpy array
     } else if let Ok(masses) = distance_r_g.extract::<PyReadonlyArray1<f64>>() { 
-
+        // allocate the output array up front
         let out = unsafe {PyArray1::new(py, distance_r_g.len().unwrap(), false)};
         let out_slice = unsafe {out.as_slice_mut().unwrap()};
 
@@ -74,10 +139,32 @@ pub fn si_from_r_g_helper<'py>(
 
     // scalar case, because Python hates us 
     } else if let Ok(mass) = distance_r_g.extract::<f64>() {
+        // allocate the output array up front
         let out = mass * r_g;
         Ok(PyArray1::from_slice(py, &[out]))
+    } else if let Ok(quantity) = extract_scalar_unit(distance_r_g) {
+        let coeff = match quantity.unit {
+            Unit::Gram => { Ok(M_SUN_G) }
+            Unit::Kilogram => { Ok(M_SUN_KG) },
+            Unit::EarthMass => { Ok(EARTH_TO_SOL) },
+            Unit::JupiterMass => { Ok(JUPITER_TO_SOL) },
+            Unit::SolarMass => { Ok(1.0) },
+            _ => Err(
+                PyTypeError::new_err(
+                    format!("Unsupported unit for si_from_r_g: {:?}", quantity.unit)
+                )
+            )
+        }?;
+
+        let solmass = quantity.value / coeff;
+        let out = solmass * r_g;
+        Ok(PyArray1::from_slice(py, &[out]))
     } else {
-        panic!("What the hell?")
+        Err(
+            PyTypeError::new_err(
+                "Unsupported format for si_from_r_g_helper: distance_r_g must be an AstroPy Quantity, a numeric NumPy array, or a unitless scalar".to_string()
+            )
+        )
     }
 }
 
@@ -95,30 +182,28 @@ pub fn r_g_from_units_helper<'py>(
     // Calculate r_g = G * M / c^2
     let r_g = (G_SI * smbh_mass_kg) / (C_SI * C_SI);
 
-    if let Ok(quantity) = extract_array_unit(distance_r_g) {
-        let out = unsafe {PyArray1::new(py, quantity.value.len().unwrap(), false)};
+    if let Ok(array_quantity) = extract_array_unit(distance_r_g) {
+        // allocate the output array up front
+        let out = unsafe {PyArray1::new(py, array_quantity.values.len().unwrap(), false)};
         let out_slice = unsafe {out.as_slice_mut().unwrap()};
 
-        let temp = distance_r_g.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
-        let distance_r_g = temp.as_slice().unwrap();
-
         // since at the moment we only accept meters
-        match quantity.unit {
+        match array_quantity.unit {
             Unit::Meter => { }
             _ => return Err(
-                pyo3::exceptions::PyValueError::new_err(
-                    format!("Unsupported unit for r_g_from_units: {:?}", quantity.unit)
+                PyTypeError::new_err(
+                    format!("Unsupported unit for r_g_from_units: {:?}", array_quantity.unit)
                 )
             )
         };
 
-        distance_r_g.iter().enumerate().for_each(|(i, val)| {
+        array_quantity.values.as_slice().unwrap().iter().enumerate().for_each(|(i, val)| {
             out_slice[i] = val / r_g;
         });
 
         Ok(out)
     } else if let Ok(masses) = distance_r_g.extract::<PyReadonlyArray1<f64>>() { 
-
+        // allocate the output array up front
         let out = unsafe {PyArray1::new(py, distance_r_g.len().unwrap(), false)};
         let out_slice = unsafe {out.as_slice_mut().unwrap()};
 
@@ -157,27 +242,25 @@ pub fn r_g_from_units_helper<'py>(
 pub fn r_schwarzschild_of_m_helper<'py>(py: Python<'py>, mass: &Bound<'_, PyAny>) -> PyResult<FloatArray1<'py>> {
 
     // extract the attribute if it exists, and if so, make sure it's denominated in solar masses
-    if let Ok(quantity) = extract_array_unit(mass) {
-        let out = unsafe {PyArray1::new(py, quantity.value.len().unwrap(), false)};
+    if let Ok(array_quantity) = extract_array_unit(mass) {
+        // allocate the output array up front
+        let out = unsafe {PyArray1::new(py, array_quantity.values.len().unwrap(), false)};
         let out_slice = unsafe {out.as_slice_mut().unwrap()};
 
-        let temp = mass.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
-        let mass = temp.as_slice().unwrap();
-
-        let coeff = match quantity.unit {
+        let coeff = match array_quantity.unit {
             Unit::Gram => { Ok(M_SUN_G) }
             Unit::Kilogram => { Ok(M_SUN_KG) },
             Unit::EarthMass => { Ok(EARTH_TO_SOL) },
             Unit::JupiterMass => { Ok(JUPITER_TO_SOL) },
             Unit::SolarMass => { Ok(1.0) },
             _ => Err(
-                pyo3::exceptions::PyValueError::new_err(
-                    format!("Unsupported unit for r_schwarzschild_of_m: {:?}", quantity.unit)
+                PyTypeError::new_err(
+                    format!("Unsupported unit for r_schwarzschild_of_m: {:?}", array_quantity.unit)
                 )
             )
         }?;
 
-        mass.iter().enumerate().for_each(|(i, val)| {
+        array_quantity.values.as_slice().unwrap().iter().enumerate().for_each(|(i, val)| {
             let solmass = val / coeff;
             let r_sch = (2.0 * G_SI * solmass / (C_SI.powi(2))) * M_SUN_KG;
             out_slice[i] = r_sch;
@@ -186,7 +269,7 @@ pub fn r_schwarzschild_of_m_helper<'py>(py: Python<'py>, mass: &Bound<'_, PyAny>
         Ok(out)
     // otherwise, assume it's a numpy float array
     } else if let Ok(masses) = mass.extract::<PyReadonlyArray1<f64>>() { 
-
+        // allocate the output array up front
         let out = unsafe {PyArray1::new(py, masses.len().unwrap(), false)};
         let out_slice = unsafe {out.as_slice_mut().unwrap()};
 
@@ -208,7 +291,7 @@ pub struct Quantity {
     pub unit: Unit
 }
 pub struct ArrayQuantity<'py> {
-    pub value: PyReadonlyArray1<'py, f64>,
+    pub values: PyReadonlyArray1<'py, f64>,
     pub unit: Unit
 }
 
@@ -226,7 +309,9 @@ pub fn extract_scalar_unit(ob: &Bound<'_, PyAny>) -> PyResult<Quantity> {
     if let Ok(unit) = parse_unit(unit_str) {
         Ok(Quantity { value, unit })
     } else {
-        panic!("Could not parse unit {unit_str}")
+        Err(
+            PyTypeError::new_err("Could not parse unit {unit_str}")
+        )
     }
 
     // else, we'll have to decompose and take it apart
@@ -241,7 +326,7 @@ pub fn extract_scalar_unit(ob: &Bound<'_, PyAny>) -> PyResult<Quantity> {
 
 pub fn extract_array_unit<'py>(ob: &Bound<'py, PyAny>) -> PyResult<ArrayQuantity<'py>> {
     // extract numerical value
-    let value = ob.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
+    let values = ob.getattr("value")?.extract::<PyReadonlyArray1<f64>>()?;
     // extract unit value
     let unit_obj = ob.getattr("unit")?;
 
@@ -251,7 +336,7 @@ pub fn extract_array_unit<'py>(ob: &Bound<'py, PyAny>) -> PyResult<ArrayQuantity
 
     // if we get a match on a simple type, return directly
     if let Ok(unit) = parse_unit(unit_str) {
-        Ok(ArrayQuantity { value, unit })
+        Ok(ArrayQuantity { values, unit })
     } else {
         panic!("Could not parse unit {unit_str}")
     }
@@ -312,7 +397,7 @@ pub fn parse_unit(unit_str: &str) -> PyResult<Unit> {
     UNIT_MAP.get(unit_str)
         .copied() // or .cloned() if UnitEnum doesn't impl Copy
         .ok_or_else(|| {
-            pyo3::exceptions::PyValueError::new_err(
+            PyTypeError::new_err(
                 format!("Unsupported unit: {}", unit_str)
             )
         })
