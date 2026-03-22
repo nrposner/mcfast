@@ -90,14 +90,13 @@ pub fn baruteau_helper<'py>(
     (out_sep, out_flag_merging, out_time_merged, out_time_to_merger_gw)
 }
 
-
 fn time_of_orbital_shrinkage(
     mass_1: f64, // solmass
     mass_2: f64, // solmass
     sep_initial: f64, // meters
     sep_final: f64, // meters
 ) -> f64 {
-    // damn! we can't make this const
+    // damn! we can't make this const yet, pow ops aren't const
     let g_c = (64.0 / 5.0) * G_SI.powi(3) * C_SI.powi(-5);
 
     let mass_1 = mass_1 * M_SUN_KG;
@@ -106,11 +105,4 @@ fn time_of_orbital_shrinkage(
     let beta = g_c * mass_1 * mass_2 * (mass_1 + mass_2);
     (sep_initial.powi(4) - sep_final.powi(4)) / 4.0 / beta
 }
-
-
-// gonna need to get a version of r_schwarzschild_of_m
-
-
-
-
 

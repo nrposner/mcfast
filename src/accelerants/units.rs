@@ -2,7 +2,7 @@ use pyo3::{exceptions::PyTypeError, prelude::*};
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use phf::{Map, phf_map};
 
-use crate::accelerants::{C_SI, EARTH_TO_SOL, FloatArray1, G_SI, JUPITER_TO_SOL, M_SUN_G, M_SUN_KG};
+use crate::accelerants::{C_SI, EARTH_TO_SOL, FloatArray1, G_SI, JUPITER_TO_SOL, M_SUN_G, M_SUN_KG, R_SUN_M};
 
 /// Calculate the gravitational radius r_g in SI units (meters)
 /// This matches the Python si_from_r_g function behavior
@@ -188,8 +188,9 @@ pub fn r_g_from_units_helper<'py>(
         let out_slice = unsafe {out.as_slice_mut().unwrap()};
 
         // since at the moment we only accept meters
-        match array_quantity.unit {
-            Unit::Meter => { }
+        let coeff = match array_quantity.unit {
+            Unit::Meter => { 1.0 }
+            Unit::SolarRad => { R_SUN_M } // number of solar radians in meters
             _ => return Err(
                 PyTypeError::new_err(
                     format!("Unsupported unit for r_g_from_units: {:?}", array_quantity.unit)
@@ -198,7 +199,7 @@ pub fn r_g_from_units_helper<'py>(
         };
 
         array_quantity.values.as_slice().unwrap().iter().enumerate().for_each(|(i, val)| {
-            out_slice[i] = val / r_g;
+            out_slice[i] = val * coeff * r_g;
         });
 
         Ok(out)
@@ -217,9 +218,8 @@ pub fn r_g_from_units_helper<'py>(
     // scalar case, because Python hates us 
     } else if let Ok(quantity) = extract_scalar_unit(distance_r_g) {
         let solmass = match quantity.unit {
-            Unit::Meter => {
-                quantity.value
-            },
+            Unit::Meter => { quantity.value },
+            Unit::SolarRad => { quantity.value * R_SUN_M }
             _ => panic!("Unsupported unit for r_g_from_units: {:?}", quantity.unit)
         };
 
