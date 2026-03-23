@@ -17,26 +17,25 @@ pub fn gw_strain_helper<'py>(
     flag_include_old_gw_freq: bool, // defaults to true?
 ) -> PyResult<(FloatArray1<'py>, FloatArray1<'py>)> {
 
+    let mass_2_slice = mass_2_arr.as_slice().unwrap();
+    let obj_sep_slice = obj_sep_arr.as_slice().unwrap();
+    let old_gw_freq_slice = old_gw_freq_arr.as_slice().unwrap();
+
+    let char_strain_arr = unsafe { PyArray1::new(py, mass_2_slice.len(), false) };
+    let char_strain_slice = unsafe { char_strain_arr.as_slice_mut().unwrap() };
+
+    let nu_gw_arr = unsafe { PyArray1::new(py, mass_2_slice.len(), false) };
+    let nu_gw_slice = unsafe { nu_gw_arr.as_slice_mut().unwrap() };
+
+    // turn years into seconds
+    // not quite 365*24*60*60, slightly higher
+    let timestep_units = timestep_duration_yr * 31557600.0;
+
+    // rg is in meters
+    let rg = 1.5e11 * (smbh_mass/1e8f64);
 
     if let Ok(mass_1_arr) = mass_1_obj.extract::<PyReadonlyArray1<f64>>() {
-
         let mass_1_slice = mass_1_arr.as_slice().unwrap();
-        let mass_2_slice = mass_2_arr.as_slice().unwrap();
-        let obj_sep_slice = obj_sep_arr.as_slice().unwrap();
-        let old_gw_freq_slice = old_gw_freq_arr.as_slice().unwrap();
-
-        let char_strain_arr = unsafe { PyArray1::new(py, mass_1_slice.len(), false) };
-        let char_strain_slice = unsafe { char_strain_arr.as_slice_mut().unwrap() };
-
-        let nu_gw_arr = unsafe { PyArray1::new(py, mass_1_slice.len(), false) };
-        let nu_gw_slice = unsafe { nu_gw_arr.as_slice_mut().unwrap() };
-
-        // turn years into seconds
-        // not quite 365*24*60*60, slightly higher
-        let timestep_units = timestep_duration_yr * 31557600.0;
-
-        // rg is in meters
-        let rg = 1.5e11 * (smbh_mass/1e8f64);
 
         for (i, (((mass_1, mass_2), obj_sep), old_gw_freq)) in mass_1_slice.iter()
             .zip(mass_2_slice)
@@ -108,22 +107,6 @@ pub fn gw_strain_helper<'py>(
         Ok((char_strain_arr, nu_gw_arr))
 
     } else if let Ok(mass_1) = mass_1_obj.extract::<f64>() {
-        let mass_2_slice = mass_2_arr.as_slice().unwrap();
-        let obj_sep_slice = obj_sep_arr.as_slice().unwrap();
-        let old_gw_freq_slice = old_gw_freq_arr.as_slice().unwrap();
-
-        let char_strain_arr = unsafe { PyArray1::new(py, mass_2_slice.len(), false) };
-        let char_strain_slice = unsafe { char_strain_arr.as_slice_mut().unwrap() };
-
-        let nu_gw_arr = unsafe { PyArray1::new(py, mass_2_slice.len(), false) };
-        let nu_gw_slice = unsafe { nu_gw_arr.as_slice_mut().unwrap() };
-
-        // turn years into seconds
-        // not quite 365*24*60*60, slightly higher
-        let timestep_units = timestep_duration_yr * 31557600.0;
-
-        // rg is in meters
-        let rg = 1.5e11 * (smbh_mass/1e8f64);
 
         for (i, ((mass_2, obj_sep), old_gw_freq)) in mass_2_slice.iter()
             .zip(obj_sep_slice)
