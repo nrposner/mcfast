@@ -13,6 +13,8 @@ pub mod gw;
 pub mod baruteau;
 pub mod units;
 
+pub mod evolution;
+
 use pyo3::prelude::*;
 use numpy::PyArray1;
 type FloatArray1<'py> = Bound<'py, PyArray1<f64>>;
