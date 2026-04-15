@@ -58,7 +58,7 @@ pub fn evolution_helper<'py>(
     disk_inner_stable_circ_orb: f64, 
     disk_surf_arr: PyReadonlyArray1<f64>,
     timestep_duration_yr: f64, 
-    disk_radius_outer_arr: PyReadonlyArray1<f64>,
+    disk_radius_outer: f64,
     rng_arr: PyReadonlyArray1<f64>
 ) -> PyResult<(FloatArray1<'py>, FloatArray1<'py>, FloatArray1<'py>)> {
 
@@ -123,7 +123,7 @@ pub fn evolution_helper<'py>(
     let disk_bh_retro_arg_periapse_slice = disk_bh_retro_arg_periapse_arr.as_slice().unwrap();
     // let disk_inner_stable_circ_orb_slice = disk_inner_stable_circ_orb_arr.as_slice().unwrap();
     let disk_surf_slice = disk_surf_arr.as_slice().unwrap();
-    let disk_radius_outer_slice = disk_radius_outer_arr.as_slice().unwrap();
+    // let disk_radius_outer_slice = disk_radius_outer_arr.as_slice().unwrap();
     let rng_slice = rng_arr.as_slice().unwrap();
 
     let out_a_arr = unsafe {PyArray1::new(py, disk_bh_retro_orbs_ecc_slice.len(), false)};
@@ -142,10 +142,10 @@ pub fn evolution_helper<'py>(
         .zip(disk_bh_retro_arg_periapse_slice)
         // .zip(disk_inner_stable_circ_orb_slice)
         .zip(disk_surf_slice)
-        .zip(disk_radius_outer_slice)
+        // .zip(disk_radius_outer_slice)
         .zip(rng_slice)
         .enumerate()
-        .for_each(|(i, (((((((disk_bh_retro_masses, disk_bh_retro_orbs_a), disk_bh_retro_orbs_ecc), disk_bh_retro_orbs_inc), disk_bh_retro_arg_periapse), disk_surf), disk_radius_outer), rng))| {
+        .for_each(|(i, ((((((disk_bh_retro_masses, disk_bh_retro_orbs_a), disk_bh_retro_orbs_ecc), disk_bh_retro_orbs_inc), disk_bh_retro_arg_periapse), disk_surf), rng))| {
 
         let cos_pm1_mask: bool = disk_bh_retro_arg_periapse.cos().abs() >= 0.5;
         let cos_0_mask: bool = !cos_pm1_mask;
@@ -212,7 +212,7 @@ pub fn evolution_helper<'py>(
             // properly speaking, this could be part of the clamp operation, but the behavior is
             // slightly different
             // disk_bh_retro_orbs_a_new[disk_bh_retro_orbs_a_new > *disk_radius_outer] = disk_radius_outer - epsilon_orb_a[disk_bh_retro_orbs_a_new > *disk_radius_outer]
-            let disk_bh_retro_orbs_a_new = if disk_bh_retro_orbs_a_new > *disk_radius_outer {
+            let disk_bh_retro_orbs_a_new = if disk_bh_retro_orbs_a_new > disk_radius_outer {
                 let epsilon_orb_a = disk_radius_outer * 
                     ((disk_bh_retro_masses / (3.0 * (disk_bh_retro_masses + smbh_mass))).cbrt()) * rng;
                 disk_radius_outer - epsilon_orb_a
