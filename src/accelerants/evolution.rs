@@ -55,9 +55,10 @@ pub fn evolution_helper<'py>(
     disk_bh_retro_orbs_ecc_arr: PyReadonlyArray1<f64>, 
     disk_bh_retro_orbs_inc_arr: PyReadonlyArray1<f64>, 
     disk_bh_retro_arg_periapse_arr: PyReadonlyArray1<f64>, 
-    disk_inner_stable_circ_orb: f64, 
+    disk_inner_stable_circ_orb: f64,
     disk_surf_arr: PyReadonlyArray1<f64>,
-    timestep_duration_yr: f64, 
+    disk_surf_ref_arr: PyReadonlyArray1<f64>,
+    timestep_duration_yr: f64,
     disk_radius_outer: f64,
     rng_arr: PyReadonlyArray1<f64>
 ) -> PyResult<(FloatArray1<'py>, FloatArray1<'py>, FloatArray1<'py>)> {
@@ -128,7 +129,7 @@ pub fn evolution_helper<'py>(
     let disk_bh_retro_arg_periapse_slice = disk_bh_retro_arg_periapse_arr.as_slice().unwrap();
     // let disk_inner_stable_circ_orb_slice = disk_inner_stable_circ_orb_arr.as_slice().unwrap();
     let disk_surf_slice = disk_surf_arr.as_slice().unwrap();
-    // let disk_radius_outer_slice = disk_radius_outer_arr.as_slice().unwrap();
+    let disk_surf_ref_slice = disk_surf_ref_arr.as_slice().unwrap();
     let rng_slice = rng_arr.as_slice().unwrap();
 
     let out_a_arr = unsafe {PyArray1::new(py, disk_bh_retro_orbs_ecc_slice.len(), false)};
@@ -145,12 +146,11 @@ pub fn evolution_helper<'py>(
         .zip(disk_bh_retro_orbs_ecc_slice)
         .zip(disk_bh_retro_orbs_inc_slice)
         .zip(disk_bh_retro_arg_periapse_slice)
-        // .zip(disk_inner_stable_circ_orb_slice)
         .zip(disk_surf_slice)
-        // .zip(disk_radius_outer_slice)
+        .zip(disk_surf_ref_slice)
         .zip(rng_slice)
         .enumerate()
-        .for_each(|(i, ((((((disk_bh_retro_masses, disk_bh_retro_orbs_a), disk_bh_retro_orbs_ecc), disk_bh_retro_orbs_inc), disk_bh_retro_arg_periapse), disk_surf), rng))| {
+        .for_each(|(i, (((((((disk_bh_retro_masses, disk_bh_retro_orbs_a), disk_bh_retro_orbs_ecc), disk_bh_retro_orbs_inc), disk_bh_retro_arg_periapse), disk_surf), disk_surf_ref), rng))| {
 
         let cos_pm1_mask: bool = disk_bh_retro_arg_periapse.cos().abs() >= 0.5;
         let cos_0_mask: bool = !cos_pm1_mask;
@@ -197,18 +197,26 @@ pub fn evolution_helper<'py>(
 
             let semi_maj_0_si = si_from_r_g(SMBH_MASS_0, semi_maj_0);
 
-            let (tau_e_ref, tau_a_ref) = tau_ecc_dyn_local(SMBH_MASS_0_KG, ORBITER_MASS_0_KG, ecc0, inc0, periapse, *disk_surf, semi_maj_0_si);
-            let tau_inc_ref = tau_inc_dyn_local(SMBH_MASS_0_KG, ORBITER_MASS_0_KG, ecc0, inc0, periapse, *disk_surf, semi_maj_0_si);
+            let (tau_e_ref, tau_a_ref) = tau_ecc_dyn_local(SMBH_MASS_0_KG, ORBITER_MASS_0_KG, ecc0, inc0, periapse, *disk_surf_ref, semi_maj_0_si);
+            let tau_inc_ref = tau_inc_dyn_local(SMBH_MASS_0_KG, ORBITER_MASS_0_KG, ecc0, inc0, periapse, *disk_surf_ref, semi_maj_0_si);
 
             let tau_e_div = tau_e_current / tau_e_ref;
             let tau_a_div = tau_a_current / tau_a_ref;
             let tau_inc_div = tau_inc_current / tau_inc_ref;
 
-            let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = (time * tau_e_div, time * tau_a_div, time * tau_inc_div);
-            let disk_bh_retro_orbs_ecc_new: f64 = (
-                disk_bh_retro_orbs_ecc * (
-                    1.0 + delta_ecc / disk_bh_retro_orbs_ecc * (timestep_duration_yr / ecc_scale_factor))
-                ).clamp(0.0, 1.0-EPSILON);
+            let (semimaj_scale_factor, inc_scale_factor) = (time * tau_a_div, time * tau_inc_div);
+
+            // Guard for ecc=0 (circular orbit): tau_e_dyn is mathematically undefined
+            // when ecc=0 because tau_a = tau_p, giving 0 * 1/|1/tau_a - 1/tau_p| = 0 * inf = NaN.
+            // A circular orbit has no eccentricity to damp, so ecc stays at its current value.
+            let disk_bh_retro_orbs_ecc_new: f64 = if *disk_bh_retro_orbs_ecc < EPSILON {
+                *disk_bh_retro_orbs_ecc
+            } else {
+                let ecc_scale_factor = time * tau_e_div;
+                (disk_bh_retro_orbs_ecc * (
+                    1.0 - delta_ecc / disk_bh_retro_orbs_ecc * (timestep_duration_yr / ecc_scale_factor))
+                ).clamp(0.0, 1.0-EPSILON)
+            };
             let disk_bh_retro_orbs_a_new: f64 = (
                 disk_bh_retro_orbs_a * (
                     1.0 - delta_semimaj / disk_bh_retro_orbs_a * (timestep_duration_yr / semimaj_scale_factor)
