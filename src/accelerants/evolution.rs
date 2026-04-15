@@ -1,6 +1,8 @@
-use std::f64::{INFINITY, consts::PI};
+use std::f64::consts::PI;
 use rayon::prelude::*;
 use crate::accelerants::{G_SI, units::si_from_r_g};
+use pyo3::{exceptions::PyValueError, prelude::*};
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 
 // good chance we can rewrite this entire thing as a single rayon iterator
 // will likely benefit a lot from parallelization
@@ -44,21 +46,20 @@ use crate::accelerants::{G_SI, units::si_from_r_g};
 //         Updated value of orbital inclination [radians] with :obj:`float` typeafter one timestep_duration_yr assuming gas only evolution hacked together badly...
 
 
-
-fn retro_bh_orb_disk_evolve_opt(
+#[pyfunction]
+pub fn retro_bh_orb_disk_evolve_opt<'py>(
+    py: Python<'py>,
     smbh_mass: f64, 
-    disk_bh_retro_masses_arr: &[f64], 
-    disk_bh_retro_orbs_a_arr: &[f64], 
-    disk_bh_retro_orbs_ecc_arr: &[f64], 
-    disk_bh_retro_orbs_inc_arr: &[f64], 
-    disk_bh_retro_arg_periapse_arr: &[f64], 
-    disk_inner_stable_circ_orb_arr: &[f64], 
-    disk_surf_arr: &[f64],
-    // disk_surf_density_func,
+    disk_bh_retro_masses_arr: PyReadonlyArray1<f64>, 
+    disk_bh_retro_orbs_a_arr: PyReadonlyArray1<f64>, 
+    disk_bh_retro_orbs_ecc_arr: PyReadonlyArray1<f64>, 
+    disk_bh_retro_orbs_inc_arr: PyReadonlyArray1<f64>, 
+    disk_bh_retro_arg_periapse_arr: PyReadonlyArray1<f64>, 
+    disk_inner_stable_circ_orb_arr: PyReadonlyArray1<f64>, 
+    disk_surf_arr: PyReadonlyArray1<f64>,
     timestep_duration_yr: f64, 
-    disk_radius_outer_arr: &[f64],
-    rng_arr: &[f64]
-    // r_g_in_meters
+    disk_radius_outer_arr: PyReadonlyArray1<f64>,
+    rng_arr: PyReadonlyArray1<f64>
 ) {
     // Housekeeping: if you're too close to ecc=1.0, nothing works, so
     const EPSILON: f64 = 1.0e-8;
@@ -108,243 +109,244 @@ fn retro_bh_orb_disk_evolve_opt(
     const STEP3_DELTA_SEMIMAJ: f64 = STEP3_SEMI_MAJ_0 - STEP3_SEMI_MAJ_F;  //rg
     const STEP3_DELTA_INC: f64 = STEP3_INC_0 - STEP3_INC_F;
 
-    // Then figure out cos(w)=0
-    // this evolution does one thing: shrink semimaj axis, circ (slowly), flip (even slower)
-    //   scaling from fig 8 WZL comparing cos(w)=0 to cos(w)=+/-1
-    //       tau_semimaj~1/100, tau_ecc~1/1000, tau_inc~1/5000
-    //       at high inc, large ecc
-    //
-    //      Estimating for smbh_mass=1e8Msun, orbiter_mass=30Msun, SG disk surf dens
-    //       in 1.5e7yrs a=100rg->60rg, e=0.7->0.5, i=175->170deg
     const STEPW0_TIME: f64 = 1.5e7;  // years
     const STEPW0_DELTA_ECC: f64 = STEPW0_ECC_0 - STEPW0_ECC_F;
     const STEPW0_DELTA_SEMIMAJ: f64 = STEPW0_SEMI_MAJ_0 - STEPW0_SEMI_MAJ_F;  //rg
     const STEPW0_DELTA_INC: f64 = STEPW0_INC_0 - STEPW0_INC_F;
 
-    //     # setup output arrays
-    //     disk_bh_retro_orbs_ecc_new = np.zeros(len(disk_bh_retro_orbs_ecc))
-    //     disk_bh_retro_orbs_inc_new = np.zeros(len(disk_bh_retro_orbs_inc))
-    //     disk_bh_retro_orbs_a_new = np.zeros(len(disk_bh_retro_orbs_a))
-    //
-    //     tau_e_current = np.full(disk_bh_retro_arg_periapse.size, -100.5)
-    //     tau_a_current = np.full(disk_bh_retro_arg_periapse.size, -100.5)
-    //     tau_e_ref = np.full(disk_bh_retro_arg_periapse.size, -100.5)
-    //     tau_a_ref = np.full(disk_bh_retro_arg_periapse.size, -100.5)
-    //     ecc_scale_factor = np.full(disk_bh_retro_arg_periapse.size, -100.5)
-    //     semimaj_scale_factor = np.full(disk_bh_retro_arg_periapse.size, -100.5)
-    //     inc_scale_factor = np.full(disk_bh_retro_arg_periapse.size, -100.5)
-    //
-    //     # cosine masks
-    //     # returns True for values where cos(w)~+/-1
+    // setting up slices
+    let disk_bh_retro_masses_slice = disk_bh_retro_masses_arr.as_slice().unwrap();
+    let disk_bh_retro_orbs_a_slice = disk_bh_retro_orbs_a_arr.as_slice().unwrap();
+    let disk_bh_retro_orbs_ecc_slice = disk_bh_retro_orbs_ecc_arr.as_slice().unwrap();
+    let disk_bh_retro_orbs_inc_slice = disk_bh_retro_orbs_inc_arr.as_slice().unwrap();
+    let disk_bh_retro_arg_periapse_slice = disk_bh_retro_arg_periapse_arr.as_slice().unwrap();
+    let disk_inner_stable_circ_orb_slice = disk_inner_stable_circ_orb_arr.as_slice().unwrap();
+    let disk_surf_slice = disk_surf_arr.as_slice().unwrap();
+    let disk_radius_outer_slice = disk_radius_outer_arr.as_slice().unwrap();
+    let rng_slice = rng_arr.as_slice().unwrap();
 
-    // take the retro_arg_periapse array and mask cosx >= 0.5
-    // take the retro_arg_periapse array and mask cosx < 0.5
-    // this could be a filter 
+    let out_a_arr = unsafe {PyArray1::new(py, disk_bh_retro_orbs_ecc_slice.len(), false)};
+    let out_a_slice = unsafe {out_a_arr.as_slice_mut().unwrap()};
 
-    // unreliable mask? all those elements where an item is in neither mask...
-    // which shouldn't happen at all unless the filter fails...
+    let out_ecc_arr = unsafe {PyArray1::new(py, disk_bh_retro_orbs_ecc_slice.len(), false)};
+    let out_ecc_slice = unsafe {out_ecc_arr.as_slice_mut().unwrap()};
 
-    // only used here, I think we can eliminate this safeguard
-
-    // cos 0 mask 
-
+    let out_inc_arr = unsafe {PyArray1::new(py, disk_bh_retro_orbs_ecc_slice.len(), false)};
+    let out_inc_slice = unsafe {out_inc_arr.as_slice_mut().unwrap()};
     
-    disk_bh_retro_masses_arr.iter()
-        .zip(disk_bh_retro_orbs_a_arr)
-        .zip(disk_bh_retro_orbs_ecc_arr)
-        .zip(disk_bh_retro_orbs_inc_arr)
-        .zip(disk_bh_retro_arg_periapse_arr)
-        .zip(disk_inner_stable_circ_orb_arr)
-        .zip(disk_surf_arr)
-        .zip(disk_radius_outer_arr)
-        .zip(rng_arr)
-        .for_each(|((((((((disk_bh_retro_masses, disk_bh_retro_orbs_a), disk_bh_retro_orbs_ecc), disk_bh_retro_orbs_inc), disk_bh_retro_arg_periapse), disk_inner_stable_circ_orb), disk_surf), disk_radius_outer), rng)| {
+    disk_bh_retro_masses_slice.iter()
+        .zip(disk_bh_retro_orbs_a_slice)
+        .zip(disk_bh_retro_orbs_ecc_slice)
+        .zip(disk_bh_retro_orbs_inc_slice)
+        .zip(disk_bh_retro_arg_periapse_slice)
+        .zip(disk_inner_stable_circ_orb_slice)
+        .zip(disk_surf_slice)
+        .zip(disk_radius_outer_slice)
+        .zip(rng_slice)
+        .enumerate()
+        .for_each(|(i, ((((((((disk_bh_retro_masses, disk_bh_retro_orbs_a), disk_bh_retro_orbs_ecc), disk_bh_retro_orbs_inc), disk_bh_retro_arg_periapse), disk_inner_stable_circ_orb), disk_surf), disk_radius_outer), rng))| {
 
-    let cos_pm1_mask: bool = disk_bh_retro_arg_periapse.cos().abs() >= 0.5;
-    let cos_0_mask: bool = !cos_pm1_mask;
+        let cos_pm1_mask: bool = disk_bh_retro_arg_periapse.cos().abs() >= 0.5;
+        let cos_0_mask: bool = !cos_pm1_mask;
 
-    // these two are related but not exhaustive
-    let no_max_ecc_retro_mask: bool = (disk_bh_retro_orbs_ecc < &STEP2_ECC_0) & (disk_bh_retro_orbs_inc.abs() >= PI/2.0); 
-    let max_ecc_mask: bool = disk_bh_retro_orbs_ecc >= &STEP2_ECC_0;
-    let barely_prograde_mask: bool = disk_bh_retro_orbs_inc.abs() < PI/2.0;
-    let ecc_unreliable_mask: bool = !(no_max_ecc_retro_mask | max_ecc_mask | barely_prograde_mask);
-    if ecc_unreliable_mask {panic!("ECC Warning: retrograde orbital parameters out of range, behavior unreliable")};
+        // these two are related but not exhaustive
+        let no_max_ecc_retro_mask: bool = (disk_bh_retro_orbs_ecc < &STEP2_ECC_0) & (disk_bh_retro_orbs_inc.abs() >= PI/2.0); 
+        let max_ecc_mask: bool = disk_bh_retro_orbs_ecc >= &STEP2_ECC_0;
+        let barely_prograde_mask: bool = disk_bh_retro_orbs_inc.abs() < PI/2.0;
+        let ecc_unreliable_mask: bool = !(no_max_ecc_retro_mask | max_ecc_mask | barely_prograde_mask);
+        if ecc_unreliable_mask {panic!("ECC Warning: retrograde orbital parameters out of range, behavior unreliable")};
 
-    let condition1 = cos_pm1_mask & no_max_ecc_retro_mask;
-    let condition2 = cos_pm1_mask & max_ecc_mask;
-    let condition3 = cos_pm1_mask & barely_prograde_mask;
-    let conditionw0 = cos_0_mask;
+        let condition1 = cos_pm1_mask & no_max_ecc_retro_mask;
+        let condition2 = cos_pm1_mask & max_ecc_mask;
+        let condition3 = cos_pm1_mask & barely_prograde_mask;
+        let conditionw0 = cos_0_mask;
 
-    let periapse = if cos_pm1_mask {PERIAPSE_1} else if cos_0_mask {PERIAPSE_0} else {-100.5};
+        let periapse = if cos_pm1_mask {PERIAPSE_1} else if cos_0_mask {PERIAPSE_0} else {-100.5};
 
-    // try to convert this into an exhaustive match
-    let (semi_maj_0, ecc0, inc0) = if condition1 {
-        (STEP1_SEMI_MAJ_0, STEP1_ECC_0, STEP1_INC_0)
-    } else if condition2 {
-        (STEP2_SEMI_MAJ_0, STEP2_ECC_0, STEP2_INC_0)
-    } else if condition3 {
-        (STEP3_SEMI_MAJ_0, STEP3_ECC_0, STEP3_INC_0)
-    } else if conditionw0 {
-        (STEPW0_SEMI_MAJ_0, STEPW0_ECC_0, STEPW0_INC_0)
-    } else { (-100.5, -100.5, -100.5) };
+        // try to convert this into an exhaustive match
+        let (semi_maj_0, ecc0, inc0) = if condition1 {
+            (STEP1_SEMI_MAJ_0, STEP1_ECC_0, STEP1_INC_0)
+        } else if condition2 {
+            (STEP2_SEMI_MAJ_0, STEP2_ECC_0, STEP2_INC_0)
+        } else if condition3 {
+            (STEP3_SEMI_MAJ_0, STEP3_ECC_0, STEP3_INC_0)
+        } else if conditionw0 {
+            (STEPW0_SEMI_MAJ_0, STEPW0_ECC_0, STEPW0_INC_0)
+        } else { (-100.5, -100.5, -100.5) };
 
-    // check that this is the right input
-    let semi_maj_axis = si_from_r_g(smbh_mass, *disk_bh_retro_orbs_a);
+        // check that this is the right input
+        let semi_maj_axis = si_from_r_g(smbh_mass, *disk_bh_retro_orbs_a);
 
-    let (tau_e_current, tau_a_current) = tau_ecc_dyn_local(smbh_mass, *disk_bh_retro_masses, *disk_bh_retro_orbs_ecc, *disk_bh_retro_orbs_inc, *disk_bh_retro_arg_periapse, *disk_surf, semi_maj_axis);
-    let tau_inc_current = tau_inc_dyn_local(smbh_mass, *disk_bh_retro_masses, *disk_bh_retro_orbs_ecc, *disk_bh_retro_orbs_inc, *disk_bh_retro_arg_periapse, *disk_surf, semi_maj_axis);
+        let (tau_e_current, tau_a_current) = tau_ecc_dyn_local(smbh_mass, *disk_bh_retro_masses, *disk_bh_retro_orbs_ecc, *disk_bh_retro_orbs_inc, *disk_bh_retro_arg_periapse, *disk_surf, semi_maj_axis);
+        let tau_inc_current = tau_inc_dyn_local(smbh_mass, *disk_bh_retro_masses, *disk_bh_retro_orbs_ecc, *disk_bh_retro_orbs_inc, *disk_bh_retro_arg_periapse, *disk_surf, semi_maj_axis);
 
-    let (tau_e_ref, tau_a_ref) = tau_ecc_dyn_local(SMBH_MASS_0, semi_maj_0, ecc0, inc0, periapse, *disk_surf, semi_maj_axis);
-    let tau_inc_ref = tau_inc_dyn_local(SMBH_MASS_0, semi_maj_0, ecc0, inc0, periapse, *disk_surf, semi_maj_axis);
+        let (tau_e_ref, tau_a_ref) = tau_ecc_dyn_local(SMBH_MASS_0, semi_maj_0, ecc0, inc0, periapse, *disk_surf, semi_maj_axis);
+        let tau_inc_ref = tau_inc_dyn_local(SMBH_MASS_0, semi_maj_0, ecc0, inc0, periapse, *disk_surf, semi_maj_axis);
 
-    let tau_e_div = tau_e_current / tau_e_ref;
-    let tau_a_div = tau_a_current / tau_a_ref;
-    let tau_inc_div = tau_inc_current / tau_inc_ref;
+        let tau_e_div = tau_e_current / tau_e_ref;
+        let tau_a_div = tau_a_current / tau_a_ref;
+        let tau_inc_div = tau_inc_current / tau_inc_ref;
 
-    // let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = if condition1 {
-    //     (STEP1_TIME * tau_e_div, STEP1_TIME * tau_a_div, STEP1_TIME * tau_inc_div, )
-    // } else if condition2 {
-    //     (STEP2_TIME * tau_e_div, STEP2_TIME * tau_a_div, STEP2_TIME * tau_inc_div, )
-    // } else if condition3 {
-    //     (STEP3_TIME * tau_e_div, STEP3_TIME * tau_a_div, STEP3_TIME * tau_inc_div, )
-    // } else if conditionw0 {
-    //     (STEPW0_TIME * tau_e_div, STEPW0_TIME * tau_a_div, STEPW0_TIME * tau_inc_div, )
-    // } else {
-    //     (-100.5, -100.5, -100.5)
-    // };
+        // let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = if condition1 {
+        //     (STEP1_TIME * tau_e_div, STEP1_TIME * tau_a_div, STEP1_TIME * tau_inc_div, )
+        // } else if condition2 {
+        //     (STEP2_TIME * tau_e_div, STEP2_TIME * tau_a_div, STEP2_TIME * tau_inc_div, )
+        // } else if condition3 {
+        //     (STEP3_TIME * tau_e_div, STEP3_TIME * tau_a_div, STEP3_TIME * tau_inc_div, )
+        // } else if conditionw0 {
+        //     (STEPW0_TIME * tau_e_div, STEPW0_TIME * tau_a_div, STEPW0_TIME * tau_inc_div, )
+        // } else {
+        //     (-100.5, -100.5, -100.5)
+        // };
 
 
-    if condition1 {
-        let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = (STEP1_TIME * tau_e_div, STEP1_TIME * tau_a_div, STEP1_TIME * tau_inc_div);
-        let disk_bh_retro_orbs_ecc_new: f64 = (
-            disk_bh_retro_orbs_ecc * (
-                1.0 + STEP1_DELTA_ECC / disk_bh_retro_orbs_ecc * (timestep_duration_yr / ecc_scale_factor))
-            ).clamp(0.0, 1.0-EPSILON);
-        let disk_bh_retro_orbs_a_new: f64 = (
-            disk_bh_retro_orbs_a * (
-                1.0 - STEP1_DELTA_SEMIMAJ / disk_bh_retro_orbs_a * (timestep_duration_yr / semimaj_scale_factor)
-            )).clamp(*disk_inner_stable_circ_orb, INFINITY);
-        let disk_bh_retro_orbs_inc_new: f64 = (
-            disk_bh_retro_orbs_inc * (
-                1.0 - STEP1_DELTA_INC / disk_bh_retro_orbs_inc * (timestep_duration_yr / inc_scale_factor)
-            )).clamp(0.0, INFINITY);
+        if condition1 {
+            let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = (STEP1_TIME * tau_e_div, STEP1_TIME * tau_a_div, STEP1_TIME * tau_inc_div);
+            let disk_bh_retro_orbs_ecc_new: f64 = (
+                disk_bh_retro_orbs_ecc * (
+                    1.0 + STEP1_DELTA_ECC / disk_bh_retro_orbs_ecc * (timestep_duration_yr / ecc_scale_factor))
+                ).clamp(0.0, 1.0-EPSILON);
+            let disk_bh_retro_orbs_a_new: f64 = (
+                disk_bh_retro_orbs_a * (
+                    1.0 - STEP1_DELTA_SEMIMAJ / disk_bh_retro_orbs_a * (timestep_duration_yr / semimaj_scale_factor)
+                )).clamp(*disk_inner_stable_circ_orb, f64::INFINITY);
+            let disk_bh_retro_orbs_inc_new: f64 = (
+                disk_bh_retro_orbs_inc * (
+                    1.0 - STEP1_DELTA_INC / disk_bh_retro_orbs_inc * (timestep_duration_yr / inc_scale_factor)
+                )).clamp(0.0, f64::INFINITY);
 
-        // properly speaking, this could be part of the clamp operation, but the behavior is
-        // slightly different
-        // disk_bh_retro_orbs_a_new[disk_bh_retro_orbs_a_new > *disk_radius_outer] = disk_radius_outer - epsilon_orb_a[disk_bh_retro_orbs_a_new > *disk_radius_outer]
-        let disk_bh_retro_orbs_a_new = if disk_bh_retro_orbs_a_new > *disk_radius_outer {
-            let epsilon_orb_a = disk_radius_outer * 
-                ((disk_bh_retro_masses / (3.0 * (disk_bh_retro_masses + smbh_mass))).cbrt()) * rng;
-            disk_radius_outer - epsilon_orb_a
+            // properly speaking, this could be part of the clamp operation, but the behavior is
+            // slightly different
+            // disk_bh_retro_orbs_a_new[disk_bh_retro_orbs_a_new > *disk_radius_outer] = disk_radius_outer - epsilon_orb_a[disk_bh_retro_orbs_a_new > *disk_radius_outer]
+            let disk_bh_retro_orbs_a_new = if disk_bh_retro_orbs_a_new > *disk_radius_outer {
+                let epsilon_orb_a = disk_radius_outer * 
+                    ((disk_bh_retro_masses / (3.0 * (disk_bh_retro_masses + smbh_mass))).cbrt()) * rng;
+                disk_radius_outer - epsilon_orb_a
+            } else {
+                disk_bh_retro_orbs_a_new
+            };
+
+            out_ecc_slice[i] = disk_bh_retro_orbs_ecc_new;
+            out_a_slice[i] = disk_bh_retro_orbs_a_new;
+            out_inc_slice[i] = disk_bh_retro_orbs_inc_new;
+        } else if condition2 { 
+            let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = (STEP2_TIME * tau_e_div, STEP2_TIME * tau_a_div, STEP2_TIME * tau_inc_div);
+            let disk_bh_retro_orbs_ecc_new: f64 = (disk_bh_retro_orbs_ecc * (1.0 + STEP2_DELTA_ECC / disk_bh_retro_orbs_ecc * (timestep_duration_yr / ecc_scale_factor))).clamp(0.0, 1.0-EPSILON);
+            let disk_bh_retro_orbs_a_new: f64 = (
+                disk_bh_retro_orbs_a * (
+                    1.0 - STEP2_DELTA_SEMIMAJ / disk_bh_retro_orbs_a * (timestep_duration_yr / semimaj_scale_factor)
+                )).clamp(*disk_inner_stable_circ_orb, f64::INFINITY);
+            let disk_bh_retro_orbs_inc_new: f64 = (
+                disk_bh_retro_orbs_inc * (
+                    1.0 - STEP2_DELTA_INC / disk_bh_retro_orbs_inc * (timestep_duration_yr / inc_scale_factor)
+                )).clamp(0.0, f64::INFINITY);
+
+            let disk_bh_retro_orbs_a_new = if disk_bh_retro_orbs_a_new > *disk_radius_outer {
+                let epsilon_orb_a = disk_radius_outer * 
+                    ((disk_bh_retro_masses / (3.0 * (disk_bh_retro_masses + smbh_mass))).cbrt()) * rng;
+                disk_radius_outer - epsilon_orb_a
+            } else {
+                disk_bh_retro_orbs_a_new
+            };
+
+            out_ecc_slice[i] = disk_bh_retro_orbs_ecc_new;
+            out_a_slice[i] = disk_bh_retro_orbs_a_new;
+            out_inc_slice[i] = disk_bh_retro_orbs_inc_new;
+        } else if condition3 {
+            let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = (STEP3_TIME * tau_e_div, STEP3_TIME * tau_a_div, STEP3_TIME * tau_inc_div);
+            let disk_bh_retro_orbs_ecc_new: f64 = (disk_bh_retro_orbs_ecc * (1.0 + STEP3_DELTA_ECC / disk_bh_retro_orbs_ecc * (timestep_duration_yr / ecc_scale_factor))).clamp(0.0, 1.0-EPSILON);
+            let disk_bh_retro_orbs_a_new: f64 = (
+                disk_bh_retro_orbs_a * (
+                    1.0 - STEP3_DELTA_SEMIMAJ / disk_bh_retro_orbs_a * (timestep_duration_yr / semimaj_scale_factor)
+                )).clamp(*disk_inner_stable_circ_orb, f64::INFINITY);
+            let disk_bh_retro_orbs_inc_new: f64 = (
+                disk_bh_retro_orbs_inc * (
+                    1.0 - STEP3_DELTA_INC / disk_bh_retro_orbs_inc * (timestep_duration_yr / inc_scale_factor)
+                )).clamp(0.0, f64::INFINITY);
+
+            let disk_bh_retro_orbs_a_new = if disk_bh_retro_orbs_a_new > *disk_radius_outer {
+                let epsilon_orb_a = disk_radius_outer * 
+                    ((disk_bh_retro_masses / (3.0 * (disk_bh_retro_masses + smbh_mass))).cbrt()) * rng;
+                disk_radius_outer - epsilon_orb_a
+            } else {
+                disk_bh_retro_orbs_a_new
+            };
+            out_ecc_slice[i] = disk_bh_retro_orbs_ecc_new;
+            out_a_slice[i] = disk_bh_retro_orbs_a_new;
+            out_inc_slice[i] = disk_bh_retro_orbs_inc_new;
+
+        } else if conditionw0 {
+            let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = (STEPW0_TIME * tau_e_div, STEPW0_TIME * tau_a_div, STEPW0_TIME * tau_inc_div);
+            let disk_bh_retro_orbs_ecc_new: f64 = (disk_bh_retro_orbs_ecc * (1.0 + STEPW0_DELTA_ECC / disk_bh_retro_orbs_ecc * (timestep_duration_yr / ecc_scale_factor))).clamp(0.0, 1.0-EPSILON);
+            let disk_bh_retro_orbs_a_new: f64 = (
+                disk_bh_retro_orbs_a * (
+                    1.0 - STEPW0_DELTA_SEMIMAJ / disk_bh_retro_orbs_a * (timestep_duration_yr / semimaj_scale_factor)
+                )).clamp(*disk_inner_stable_circ_orb, f64::INFINITY);
+            let disk_bh_retro_orbs_inc_new: f64 = (
+                disk_bh_retro_orbs_inc * (
+                    1.0 - STEPW0_DELTA_INC / disk_bh_retro_orbs_inc * (timestep_duration_yr / inc_scale_factor)
+                )).clamp(0.0, f64::INFINITY);
+
+            let disk_bh_retro_orbs_a_new = if disk_bh_retro_orbs_a_new > *disk_radius_outer {
+                let epsilon_orb_a = disk_radius_outer * 
+                    ((disk_bh_retro_masses / (3.0 * (disk_bh_retro_masses + smbh_mass))).cbrt()) * rng;
+                disk_radius_outer - epsilon_orb_a
+            } else {
+                disk_bh_retro_orbs_a_new
+            };
+
+            out_ecc_slice[i] = disk_bh_retro_orbs_ecc_new;
+            out_a_slice[i] = disk_bh_retro_orbs_a_new;
+            out_inc_slice[i] = disk_bh_retro_orbs_inc_new;
         } else {
-            disk_bh_retro_orbs_a_new
-        };
+            // are these actually totally unnecessary in this branch????
+            // todo: double check this
+            // let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = (-100.5, -100.5, -100.5);
 
-    } else if condition2 { 
-        let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = (STEP2_TIME * tau_e_div, STEP2_TIME * tau_a_div, STEP2_TIME * tau_inc_div);
-        let disk_bh_retro_orbs_ecc_new: f64 = (disk_bh_retro_orbs_ecc * (1.0 + STEP2_DELTA_ECC / disk_bh_retro_orbs_ecc * (timestep_duration_yr / ecc_scale_factor))).clamp(0.0, 1.0-EPSILON);
-        let disk_bh_retro_orbs_a_new: f64 = (
-            disk_bh_retro_orbs_a * (
-                1.0 - STEP2_DELTA_SEMIMAJ / disk_bh_retro_orbs_a * (timestep_duration_yr / semimaj_scale_factor)
-            )).clamp(*disk_inner_stable_circ_orb, INFINITY);
-        let disk_bh_retro_orbs_inc_new: f64 = (
-            disk_bh_retro_orbs_inc * (
-                1.0 - STEP2_DELTA_INC / disk_bh_retro_orbs_inc * (timestep_duration_yr / inc_scale_factor)
-            )).clamp(0.0, INFINITY);
+            let disk_bh_retro_orbs_ecc_new: f64 = 0.0;   
+            let disk_bh_retro_orbs_a_new: f64 = 0.0;
+            let disk_bh_retro_orbs_inc_new: f64 = 0.0;
 
-        let disk_bh_retro_orbs_a_new = if disk_bh_retro_orbs_a_new > *disk_radius_outer {
-            let epsilon_orb_a = disk_radius_outer * 
-                ((disk_bh_retro_masses / (3.0 * (disk_bh_retro_masses + smbh_mass))).cbrt()) * rng;
-            disk_radius_outer - epsilon_orb_a
-        } else {
-            disk_bh_retro_orbs_a_new
-        };
+            out_ecc_slice[i] = disk_bh_retro_orbs_ecc_new;
+            out_a_slice[i] = disk_bh_retro_orbs_a_new;
+            out_inc_slice[i] = disk_bh_retro_orbs_inc_new;
+        }
+
+     // todo: which of these finity checks are actually necessary?? 
 
 
-    } else if condition3 {
-        let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = (STEP3_TIME * tau_e_div, STEP3_TIME * tau_a_div, STEP3_TIME * tau_inc_div);
-        let disk_bh_retro_orbs_ecc_new: f64 = (disk_bh_retro_orbs_ecc * (1.0 + STEP3_DELTA_ECC / disk_bh_retro_orbs_ecc * (timestep_duration_yr / ecc_scale_factor))).clamp(0.0, 1.0-EPSILON);
-        let disk_bh_retro_orbs_a_new: f64 = (
-            disk_bh_retro_orbs_a * (
-                1.0 - STEP3_DELTA_SEMIMAJ / disk_bh_retro_orbs_a * (timestep_duration_yr / semimaj_scale_factor)
-            )).clamp(*disk_inner_stable_circ_orb, INFINITY);
-        let disk_bh_retro_orbs_inc_new: f64 = (
-            disk_bh_retro_orbs_inc * (
-                1.0 - STEP3_DELTA_INC / disk_bh_retro_orbs_inc * (timestep_duration_yr / inc_scale_factor)
-            )).clamp(0.0, INFINITY);
-
-        let disk_bh_retro_orbs_a_new = if disk_bh_retro_orbs_a_new > *disk_radius_outer {
-            let epsilon_orb_a = disk_radius_outer * 
-                ((disk_bh_retro_masses / (3.0 * (disk_bh_retro_masses + smbh_mass))).cbrt()) * rng;
-            disk_radius_outer - epsilon_orb_a
-        } else {
-            disk_bh_retro_orbs_a_new
-        };
-
-    } else if conditionw0 {
-        let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = (STEPW0_TIME * tau_e_div, STEPW0_TIME * tau_a_div, STEPW0_TIME * tau_inc_div);
-        let disk_bh_retro_orbs_ecc_new: f64 = (disk_bh_retro_orbs_ecc * (1.0 + STEPW0_DELTA_ECC / disk_bh_retro_orbs_ecc * (timestep_duration_yr / ecc_scale_factor))).clamp(0.0, 1.0-EPSILON);
-        let disk_bh_retro_orbs_a_new: f64 = (
-            disk_bh_retro_orbs_a * (
-                1.0 - STEPW0_DELTA_SEMIMAJ / disk_bh_retro_orbs_a * (timestep_duration_yr / semimaj_scale_factor)
-            )).clamp(*disk_inner_stable_circ_orb, INFINITY);
-        let disk_bh_retro_orbs_inc_new: f64 = (
-            disk_bh_retro_orbs_inc * (
-                1.0 - STEPW0_DELTA_INC / disk_bh_retro_orbs_inc * (timestep_duration_yr / inc_scale_factor)
-            )).clamp(0.0, INFINITY);
-
-        let disk_bh_retro_orbs_a_new = if disk_bh_retro_orbs_a_new > *disk_radius_outer {
-            let epsilon_orb_a = disk_radius_outer * 
-                ((disk_bh_retro_masses / (3.0 * (disk_bh_retro_masses + smbh_mass))).cbrt()) * rng;
-            disk_radius_outer - epsilon_orb_a
-        } else {
-            disk_bh_retro_orbs_a_new
-        };
-
-    } else {
-        let (ecc_scale_factor, semimaj_scale_factor, inc_scale_factor) = (-100.5, -100.5, -100.5);
-
-        let disk_bh_retro_orbs_ecc_new: f64 = 0.0;   
-        let disk_bh_retro_orbs_a_new: f64 = 0.0;
-        let disk_bh_retro_orbs_inc_new: f64 = 0.0;
-    }
-
-
- // todo: which of these finity checks are actually necessary?? 
-
-
-    //     # Check Finite
-    //     nan_mask = (
-    //         ~np.isfinite(disk_bh_retro_orbs_ecc_new) | \
-    //         ~np.isfinite(disk_bh_retro_orbs_a_new) | \
-    //         ~np.isfinite(disk_bh_retro_orbs_inc_new) \
-    //     )
-    //     if np.sum(nan_mask) > 0:
-    //         # Check for objects inside 12.1 R_g
-    //         if all(disk_bh_retro_orbs_a[nan_mask] < 12.1):
-    //             disk_bh_retro_orbs_ecc_new[nan_mask] = disk_bh_retro_orbs_ecc[nan_mask]
-    //             # Inside ACTUAL ISCO; might get caught better
-    //             disk_bh_retro_orbs_a_new[nan_mask] = 5.9
-    //             # It's been eaten
-    //             disk_bh_retro_orbs_inc_new[nan_mask] = 0.
-    //         else:
-    //             print("nan_mask:",np.where(nan_mask))
-    //             print("nan old ecc:",disk_bh_retro_orbs_ecc[nan_mask])
-    //             print("disk_bh_retro_masses:", disk_bh_retro_masses[nan_mask])
-    //             print("disk_bh_retro_orbs_a:", disk_bh_retro_orbs_a[nan_mask])
-    //             print("disk_bh_retro_orbs_inc:", disk_bh_retro_orbs_inc[nan_mask])
-    //             print("disk_bh_retro_arg_periapse:", disk_bh_retro_arg_periapse[nan_mask])
-    //             disk_bh_retro_orbs_ecc_new[nan_mask] = 2.
-    //             disk_bh_retro_orbs_a_new[nan_mask] = 0.
-    //             disk_bh_retro_orbs_inc_new[nan_mask] = 0.
-    //             raise RuntimeError("Finite check failed for disk_bh_retro_orbs_ecc_new")
-    //
-    //     assert np.all(disk_bh_retro_orbs_a_new < disk_radius_outer), \
-    //         "disk_bh_retro_orbs_a_new has values greater than disk_radius_outer"
-    //     assert np.all(disk_bh_retro_orbs_a_new >= 0), \
-    //         "disk_bh_retro_orbs_a_new has values < 0"
-    //
-    //     return disk_bh_retro_orbs_ecc_new, disk_bh_retro_orbs_a_new, disk_bh_retro_orbs_inc_new
+        //     # Check Finite
+        //     nan_mask = (
+        //         ~np.isfinite(disk_bh_retro_orbs_ecc_new) | \
+        //         ~np.isfinite(disk_bh_retro_orbs_a_new) | \
+        //         ~np.isfinite(disk_bh_retro_orbs_inc_new) \
+        //     )
+        //     if np.sum(nan_mask) > 0:
+        //         # Check for objects inside 12.1 R_g
+        //         if all(disk_bh_retro_orbs_a[nan_mask] < 12.1):
+        //             disk_bh_retro_orbs_ecc_new[nan_mask] = disk_bh_retro_orbs_ecc[nan_mask]
+        //             # Inside ACTUAL ISCO; might get caught better
+        //             disk_bh_retro_orbs_a_new[nan_mask] = 5.9
+        //             # It's been eaten
+        //             disk_bh_retro_orbs_inc_new[nan_mask] = 0.
+        //         else:
+        //             print("nan_mask:",np.where(nan_mask))
+        //             print("nan old ecc:",disk_bh_retro_orbs_ecc[nan_mask])
+        //             print("disk_bh_retro_masses:", disk_bh_retro_masses[nan_mask])
+        //             print("disk_bh_retro_orbs_a:", disk_bh_retro_orbs_a[nan_mask])
+        //             print("disk_bh_retro_orbs_inc:", disk_bh_retro_orbs_inc[nan_mask])
+        //             print("disk_bh_retro_arg_periapse:", disk_bh_retro_arg_periapse[nan_mask])
+        //             disk_bh_retro_orbs_ecc_new[nan_mask] = 2.
+        //             disk_bh_retro_orbs_a_new[nan_mask] = 0.
+        //             disk_bh_retro_orbs_inc_new[nan_mask] = 0.
+        //             raise RuntimeError("Finite check failed for disk_bh_retro_orbs_ecc_new")
+        //
+        //     assert np.all(disk_bh_retro_orbs_a_new < disk_radius_outer), \
+        //         "disk_bh_retro_orbs_a_new has values greater than disk_radius_outer"
+        //     assert np.all(disk_bh_retro_orbs_a_new >= 0), \
+        //         "disk_bh_retro_orbs_a_new has values < 0"
+        //
+        //     return disk_bh_retro_orbs_ecc_new, disk_bh_retro_orbs_a_new, disk_bh_retro_orbs_inc_new
     });
     // todo: collect or manually append into the pre-set arrays
 
