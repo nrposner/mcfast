@@ -175,14 +175,16 @@ pub fn evolution_helper<'py>(
 
             let periapse = if cos_pm1_mask {PERIAPSE_1} else if cos_0_mask {PERIAPSE_0} else {-100.5};
 
-            // try to convert this into an exhaustive match
+            // Condition priority matches Python's masked-assignment order (last write wins):
+            // condition3 (barely_prograde) must be checked before condition2 (max_ecc)
+            // because they can overlap (ecc >= 0.9999 AND |inc| < pi/2), and in
+            // Python the barely_prograde assignment comes after max_ecc, overwriting it.
             let (semi_maj_0, ecc0, inc0, time, delta_ecc, delta_semimaj, delta_inc) = if condition1 {
                 (STEP1_SEMI_MAJ_0, STEP1_ECC_0, STEP1_INC_0, STEP1_TIME, STEP1_DELTA_ECC, STEP1_DELTA_SEMIMAJ, STEP1_DELTA_INC)
-            } else if condition2 {
-                (STEP2_SEMI_MAJ_0, STEP2_ECC_0, STEP2_INC_0, STEP2_TIME, STEP2_DELTA_ECC, STEP2_DELTA_SEMIMAJ, STEP2_DELTA_INC)
             } else if condition3 {
                 (STEP3_SEMI_MAJ_0, STEP3_ECC_0, STEP3_INC_0, STEP3_TIME, STEP3_DELTA_ECC, STEP3_DELTA_SEMIMAJ, STEP3_DELTA_INC)
-            // else it must be condition20
+            } else if condition2 {
+                (STEP2_SEMI_MAJ_0, STEP2_ECC_0, STEP2_INC_0, STEP2_TIME, STEP2_DELTA_ECC, STEP2_DELTA_SEMIMAJ, STEP2_DELTA_INC)
             } else {
                 (STEPW0_SEMI_MAJ_0, STEPW0_ECC_0, STEPW0_INC_0, STEPW0_TIME, STEPW0_DELTA_ECC, STEPW0_DELTA_SEMIMAJ, STEPW0_DELTA_INC)
             };
