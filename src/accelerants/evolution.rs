@@ -229,49 +229,36 @@ pub fn evolution_helper<'py>(
                 disk_bh_retro_orbs_a_new
             };
 
-            out_ecc_slice[i] = disk_bh_retro_orbs_ecc_new;
-            out_a_slice[i] = disk_bh_retro_orbs_a_new;
-            out_inc_slice[i] = disk_bh_retro_orbs_inc_new;
+            // Finite check: if any output is non-finite, apply fallback
+            if !disk_bh_retro_orbs_ecc_new.is_finite()
+                || !disk_bh_retro_orbs_a_new.is_finite()
+                || !disk_bh_retro_orbs_inc_new.is_finite()
+            {
+                if *disk_bh_retro_orbs_a < 12.1 {
+                    // Inside ACTUAL ISCO; preserve old ecc, mark as eaten
+                    out_ecc_slice[i] = *disk_bh_retro_orbs_ecc;
+                    out_a_slice[i] = 5.9;
+                    out_inc_slice[i] = 0.0;
+                } else {
+                    out_ecc_slice[i] = 2.0;
+                    out_a_slice[i] = 0.0;
+                    out_inc_slice[i] = 0.0;
+                    panic!(
+                        "Finite check failed: i={}, ecc={}, mass={}, a={}, inc={}, periapse={}",
+                        i, disk_bh_retro_orbs_ecc, disk_bh_retro_masses,
+                        disk_bh_retro_orbs_a, disk_bh_retro_orbs_inc, disk_bh_retro_arg_periapse
+                    );
+                }
+            } else {
+                out_ecc_slice[i] = disk_bh_retro_orbs_ecc_new;
+                out_a_slice[i] = disk_bh_retro_orbs_a_new;
+                out_inc_slice[i] = disk_bh_retro_orbs_inc_new;
+            }
         } else {
             out_ecc_slice[i] = 0.0;
             out_a_slice[i] = 0.0;
             out_inc_slice[i] = 0.0;
         }
-
-     // todo: which of these finity checks are actually necessary?? 
-
-        //     # Check Finite
-        //     nan_mask = (
-        //         ~np.isfinite(disk_bh_retro_orbs_ecc_new) | \
-        //         ~np.isfinite(disk_bh_retro_orbs_a_new) | \
-        //         ~np.isfinite(disk_bh_retro_orbs_inc_new) \
-        //     )
-        //     if np.sum(nan_mask) > 0:
-        //         # Check for objects inside 12.1 R_g
-        //         if all(disk_bh_retro_orbs_a[nan_mask] < 12.1):
-        //             disk_bh_retro_orbs_ecc_new[nan_mask] = disk_bh_retro_orbs_ecc[nan_mask]
-        //             # Inside ACTUAL ISCO; might get caught better
-        //             disk_bh_retro_orbs_a_new[nan_mask] = 5.9
-        //             # It's been eaten
-        //             disk_bh_retro_orbs_inc_new[nan_mask] = 0.
-        //         else:
-        //             print("nan_mask:",np.where(nan_mask))
-        //             print("nan old ecc:",disk_bh_retro_orbs_ecc[nan_mask])
-        //             print("disk_bh_retro_masses:", disk_bh_retro_masses[nan_mask])
-        //             print("disk_bh_retro_orbs_a:", disk_bh_retro_orbs_a[nan_mask])
-        //             print("disk_bh_retro_orbs_inc:", disk_bh_retro_orbs_inc[nan_mask])
-        //             print("disk_bh_retro_arg_periapse:", disk_bh_retro_arg_periapse[nan_mask])
-        //             disk_bh_retro_orbs_ecc_new[nan_mask] = 2.
-        //             disk_bh_retro_orbs_a_new[nan_mask] = 0.
-        //             disk_bh_retro_orbs_inc_new[nan_mask] = 0.
-        //             raise RuntimeError("Finite check failed for disk_bh_retro_orbs_ecc_new")
-        //
-        //     assert np.all(disk_bh_retro_orbs_a_new < disk_radius_outer), \
-        //         "disk_bh_retro_orbs_a_new has values greater than disk_radius_outer"
-        //     assert np.all(disk_bh_retro_orbs_a_new >= 0), \
-        //         "disk_bh_retro_orbs_a_new has values < 0"
-        //
-        //     return disk_bh_retro_orbs_ecc_new, disk_bh_retro_orbs_a_new, disk_bh_retro_orbs_inc_new
     });
     Ok((out_ecc_arr, out_a_arr, out_inc_arr))
 }
