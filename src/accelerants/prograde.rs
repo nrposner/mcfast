@@ -1,136 +1,189 @@
-use std::f64::consts::PI;
+use std::{collections::BTreeSet, f64::consts::PI};
 
-use pyo3::{prelude::*, types::PyList};
-use numpy::{PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::prelude::*;
+use numpy::{PyReadonlyArray1, PyReadonlyArray2, IntoPyArray};
+use ndarray::{Array1, Array2, Axis};
+use std::cmp::Ordering;
+
+use crate::accelerants::{C_SI, FloatArray1, G_SI};
 
 
-#[allow(clippy::collapsible_if)]
-pub fn _circ_prograde_stars<'py>(
-    py: Python<'py>,
-    smbh_mass: f64,
-    solar_mass: f64,
-    bin_mass_1: PyReadonlyArray1<'py, f64>,
-    bin_id_nums: PyReadonlyArray1<'py, f64>,
-    bin_masses: PyReadonlyArray1<'py, f64>,
-    bin_sep: PyReadonlyArray1<f64>,
-    bin_ecc: PyReadonlyArray1<f64>,
-    bin_orb_ecc: PyReadonlyArray1<f64>,
-    bin_orb_a: PyReadonlyArray1<'py, f64>,
-    bin_contact_sep: PyReadonlyArray1<'py, f64>,
-    bin_hill_sep: PyReadonlyArray1<'py, f64>,
-    epsilon_orb_a: PyReadonlyArray1<'py, f64>,
-    bin_orbits_per_timestep: PyReadonlyArray1<'py, f64>,
-    ecc_orb_max: PyReadonlyArray1<'py, f64>,
-    ecc_orb_min: PyReadonlyArray1<'py, f64>,
-    circ_prograde_population_locations: PyReadonlyArray1<'py, f64>,
-    circ_prograde_population_eccentricities: PyReadonlyArray1<'py, f64>,
-    circ_prograde_population_masses: PyReadonlyArray1<'py, f64>,
-    circ_prograde_population_id_nums: PyReadonlyArray1<'py, f64>,
-    chances: PyReadonlyArray2<'py, f64>,
-    bin_velocities: PyReadonlyArray1<'py, f64>,
-    circ_velocities: PyReadonlyArray1<'py, f64>,
-    bin_binding_energy: PyReadonlyArray1<'py, f64>,
-    de_strong: f64,
-    delta_energy_strong: f64,
-    disk_radius_outer: f64,
-    epsilon: f64,
-) -> (Bound<'py, PyList>, Bound<'py, PyList>, Bound<'py, PyList>, Bound<'py, PyList>) {
-// ) -> Bound<'py, PyList> {
+// A particle with its original index preserved.
+// No more parallel vecs — everything travels together.
+#[derive(Clone)]
+struct Particle {
+    orig_idx: usize,
+    orb_a:    f64,
+    orb_ecc:  f64,
+    mass:     f64,
+}
 
-    let bin_sep_slice = unsafe {bin_sep.as_slice_mut().unwrap() };
-    let bin_ecc_slice = unsafe {bin_ecc.as_slice_mut().unwrap() };
-    let bin_orb_ecc_slice = unsafe {bin_orb_ecc.as_slice_mut().unwrap() };
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum EventKind {
+    Start, // -1: open an eccentric interval
+    Point, //  0: a circular particle lives here
+    End,   // +1: close an eccentric interval
+}
 
-    let circ_prograde_population_locations_slice = unsafe { circ_prograde_population_locations.as_slice_mut().unwrap() };
-    let circ_prograde_population_eccentricities_slice = unsafe { circ_prograde_population_eccentricities.as_slice_mut().unwrap() };
+struct Event {
+    radius:   f64,
+    kind:     EventKind,
+    rel_idx:  usize, // index into circ[] or ecc[] depending on kind
+}
 
-    // todo: double check these don't need to be mutable
-    // buckets for appending, lists, inefficient
-    let id_nums_poss_touch = PyList::empty(py);
-    let frac_rhill_sep = PyList::empty(py);
-    let id_nums_ionized_bin = PyList::empty(py);
-    let id_nums_merged_bin = PyList::empty(py);
+impl PartialEq  for Event { fn eq(&self, o: &Self) -> bool { self.cmp(o) == Ordering::Equal } }
+impl Eq         for Event {}
+impl PartialOrd for Event { fn partial_cmp(&self, o: &Self) -> Option<Ordering> { Some(self.cmp(o)) } }
+impl Ord for Event {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Sort by radius first, then by EventKind (Start < Point < End)
+        // so that boundary-touching intervals are opened before a point is
+        // processed, and closed after — matching the Python behaviour.
+        self.radius
+            .partial_cmp(&other.radius)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| self.kind.cmp(&other.kind))
+    }
+}
 
-    // double loop, potential for a sort+sweep here?
-    for i in 0..bin_mass_1.len().unwrap() {
-        for j in 0..circ_prograde_population_locations.len().unwrap() {
-            if !id_nums_ionized_bin.contains(bin_id_nums.get(i).unwrap()).unwrap() && !id_nums_merged_bin.contains(bin_id_nums.get(i).unwrap()).unwrap() {
-                if (1.0 - *bin_orb_ecc.get(i).unwrap()) * *bin_orb_a.get(i).unwrap() < *ecc_orb_max.get(j).unwrap() && (1.0 + bin_orb_ecc.get(i).unwrap() * bin_orb_a.get(i).unwrap() > *ecc_orb_min.get(j).unwrap()) {
-                    // temp_bin_mass / (3.0 * smbh_mass)
-                    let bh_smbh_mass_ratio = (bin_masses.get(i).unwrap() + circ_prograde_population_masses.get(j).unwrap())/(3.0 * smbh_mass);
-                    let prob_enc_per_timestep = ((1.0/PI) * (bh_smbh_mass_ratio.powf(1.0/3.0)) * bin_orbits_per_timestep.get(i).unwrap()).clamp(-100.0, 1.0);
+// helper function for circular_singles_encounters_prograde
+#[pyfunction]
+pub fn encounters_prograde_sweep_helper<'py>(
+    py:                      Python<'py>,
+    smbh_mass:               f64,
+    disk_bh_pro_orbs_a:      PyReadonlyArray1<f64>,
+    disk_bh_pro_masses:      PyReadonlyArray1<f64>,
+    disk_bh_pro_orbs_ecc:    PyReadonlyArray1<f64>,
+    timestep_duration_yr:    f64,
+    disk_bh_pro_orb_ecc_crit: f64,
+    delta_energy_strong:     f64,
+    disk_radius_outer:       f64,
+    // eps_denom and chance_of_enc are pre-generated on the Python side
+    // and passed in so that random-state management stays in Python.
+    eps_denom:               PyReadonlyArray2<f64>, // shape (N_circ, N_ecc)
+    chance_of_enc:           PyReadonlyArray2<f64>, // shape (N_circ, N_ecc)
+// ) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+) -> PyResult<(FloatArray1<'py>, FloatArray1<'py>)> {
 
-                    // double check this syntax is right
-                    let chance_of_encounter = chances.get([i, j]).unwrap();
-                    if *chance_of_encounter < prob_enc_per_timestep {
-                        let rel_vel_ms = (bin_velocities.get(i).unwrap() - circ_velocities.get(j).unwrap()).abs();
-                        let ke_interloper = 0.5 * circ_prograde_population_masses.get(j).unwrap() * solar_mass * (rel_vel_ms.powi(2));
-                        let hard = bin_binding_energy.get(i).unwrap() - ke_interloper;
-                        if hard > 0.0 {
-                            // these need to be mutable slices
-                            bin_sep_slice[i] *= 1.0 - de_strong;
-                            bin_ecc_slice[i] *= 1.0 + de_strong;
-                            bin_orb_ecc_slice[i] *= 1.0 + delta_energy_strong;
+    // ── 1. Build owned, mutable output arrays ────────────────────────────────
+    // We copy once here; every mutation below operates on these Vecs.
+    let mut out_orbs_a:   Vec<f64> = disk_bh_pro_orbs_a.as_slice()?.to_vec();
+    let mut out_orbs_ecc: Vec<f64> = disk_bh_pro_orbs_ecc.as_slice()?.to_vec();
+    let masses:           &[f64]   = disk_bh_pro_masses.as_slice()?;
 
-                            // changing the interloper parameters
-                            // this might be troublesome
-                            circ_prograde_population_locations_slice[j] *= 1.0 + delta_energy_strong;
-                            if circ_prograde_population_locations_slice[j] > disk_radius_outer {
-                                circ_prograde_population_locations_slice[j] = disk_radius_outer - epsilon_orb_a.get(j).unwrap();
-                            }
-                            circ_prograde_population_eccentricities_slice[j] *= 1.0 + delta_energy_strong;
-                            if bin_sep.get(i).unwrap() <= bin_contact_sep.get(i).unwrap() {
-                                let _ = id_nums_merged_bin.append(*bin_id_nums.get(i).unwrap());
-                            }
-                        } else if hard < 0.0 {
-                            bin_sep_slice[i] *= 1.0 - delta_energy_strong;
-                            bin_ecc_slice[i] *= 1.0 + delta_energy_strong;
-                            bin_orb_ecc_slice[i] *= 1.0 + delta_energy_strong;
+    // ── 2. Partition into circular / eccentric populations ───────────────────
+    // Each Particle carries its original index so we never need a separate
+    // "relative → absolute" lookup table.
+    let (circ, ecc): (Vec<Particle>, Vec<Particle>) = out_orbs_ecc
+        .iter()
+        .enumerate()
+        .map(|(i, &ecc)| Particle {
+            orig_idx: i,
+            orb_a:    out_orbs_a[i],
+            orb_ecc:  ecc,
+            mass:     masses[i],
+        })
+        .partition(|p| p.orb_ecc <= disk_bh_pro_orb_ecc_crit);
 
-                            circ_prograde_population_locations_slice[j] *= 1.0 - delta_energy_strong;
-                            if circ_prograde_population_locations_slice[j] > disk_radius_outer {
-                                circ_prograde_population_locations_slice[j] = disk_radius_outer - epsilon_orb_a.get(j).unwrap();
-                            }
-                            circ_prograde_population_eccentricities_slice[j] *= 1.0 - delta_energy_strong;
+    let circ_len = circ.len();
+    let ecc_len  = ecc.len();
 
-                            if bin_sep_slice[i] > *bin_hill_sep.get(i).unwrap() {
-                                let _ = id_nums_ionized_bin.append(*bin_id_nums.get(i).unwrap());
-                            }
+    if circ_len == 0 || ecc_len == 0 {
+        // Nothing to do — return the (unchanged) input arrays as new Python objects.
+        let a   = Array1::from(out_orbs_a).into_pyarray(py);
+        let ecc = Array1::from(out_orbs_ecc).into_pyarray(py);
+        return Ok((a, ecc));
+    }
+
+    // ── 3. Pre-compute per-circ orbital timescale ratio ──────────────────────
+    let time_factor = PI * (2.0e30 * smbh_mass * G_SI) / (C_SI.powi(3) * 3.15e7);
+    let n_orbs_per_timestep: Vec<f64> = circ.iter().map(|p| {
+        let t_orb = p.orb_a.powf(1.5) * time_factor;
+        timestep_duration_yr / t_orb
+    }).collect();
+
+    // ── 4. Epsilon: Hill-radius × random — shape (N_circ, N_ecc) ─────────────
+    // hill_radii[i] = disk_radius_outer * (m_circ / (3*(m_circ + M_smbh)))^(1/3)
+    let hill_radii: Array1<f64> = Array1::from_iter(
+        circ.iter().map(|p| {
+            disk_radius_outer * (p.mass / (3.0 * (p.mass + smbh_mass))).cbrt()
+        })
+    );
+    // Broadcast (N_circ, 1) * (N_circ, N_ecc)  →  (N_circ, N_ecc)
+    let epsilon: Array2<f64> =
+        &hill_radii.insert_axis(Axis(1)) * &eps_denom.as_array();
+
+    let chance = chance_of_enc.as_array();
+
+    // ── 5. Build the sweep-line event list ───────────────────────────────────
+    let mut events: Vec<Event> = Vec::with_capacity(circ_len + 2 * ecc_len);
+
+    for (rel_idx, p) in circ.iter().enumerate() {
+        events.push(Event { radius: p.orb_a, kind: EventKind::Point, rel_idx });
+    }
+    for (rel_idx, p) in ecc.iter().enumerate() {
+        let min_r = p.orb_a * (1.0 - p.orb_ecc);
+        let max_r = p.orb_a * (1.0 + p.orb_ecc);
+        events.push(Event { radius: min_r, kind: EventKind::Start, rel_idx });
+        events.push(Event { radius: max_r, kind: EventKind::End,   rel_idx });
+    }
+
+    events.sort(); // stable sort not required; EventKind ordering handles ties
+
+    // ── 6. Sweep ─────────────────────────────────────────────────────────────
+    // BTreeSet gives us sorted iteration for free, matching Python's
+    //   `sorted(list(active_ecc_indices))`.
+    let mut active: BTreeSet<usize> = BTreeSet::new();
+
+    // We need a snapshot of active indices before we can break out of the
+    // inner loop, so collect into a Vec first.
+    for event in &events {
+        match event.kind {
+            EventKind::Start => { active.insert(event.rel_idx); }
+            EventKind::End   => { active.remove(&event.rel_idx); }
+            EventKind::Point => {
+                if active.is_empty() { continue; }
+
+                let circ_rel_idx = event.rel_idx;
+                let circ_orig    = circ[circ_rel_idx].orig_idx;
+
+                // Snapshot so we can break cleanly without borrow issues.
+                let sorted_interlopers: Vec<usize> = active.iter().copied().collect();
+
+                for ecc_rel_idx in sorted_interlopers {
+                    let ecc_orig = ecc[ecc_rel_idx].orig_idx;
+
+                    let temp_bin_mass     = masses[circ_orig] + masses[ecc_orig];
+                    let bh_smbh_mass_ratio = temp_bin_mass / (3.0 * smbh_mass);
+                    let mass_ratio_factor  = bh_smbh_mass_ratio.cbrt();
+                    let prob_orbit_overlap = mass_ratio_factor / PI;
+                    let prob_enc = (prob_orbit_overlap * n_orbs_per_timestep[circ_rel_idx]).min(1.0);
+
+                    if chance[[circ_rel_idx, ecc_rel_idx]] < prob_enc {
+                        // Kick the circular particle into eccentricity
+                        out_orbs_ecc[circ_orig] = delta_energy_strong;
+                        out_orbs_a[circ_orig]  *= 1.0 + delta_energy_strong;
+                        if out_orbs_a[circ_orig] >= disk_radius_outer {
+                            out_orbs_a[circ_orig] =
+                                disk_radius_outer - epsilon[[circ_rel_idx, ecc_rel_idx]];
                         }
-                        // todo... not quite identical behavior, but prob fine??
-                        // nah, make it identical
-                        if *bin_ecc.get(i).unwrap() > 1.0 {
-                            bin_ecc_slice[i] = 1.0 - epsilon;
-                        }
-                        if *bin_orb_ecc.get(i).unwrap() > 1.0 {
-                            bin_orb_ecc_slice[i] = 1.0 - epsilon;
-                        }
-                        if *circ_prograde_population_eccentricities.get(i).unwrap() > 1.0 {
-                            circ_prograde_population_eccentricities_slice[i] = 1.0 - epsilon;
-                        }
 
-                        let separation = (circ_prograde_population_locations.get(j).unwrap() - bin_orb_a.get(i).unwrap()).abs();
-                        // perform a weighted average
-                        // double check that this is equivalent to 
-                        // center_of_mass = np.average([circ_prograde_population_locations[j], bin_orb_a[i]],
-                        //                             weights=[circ_prograde_population_masses[j], bin_masses[i]])
-                        let center_of_mass = ((circ_prograde_population_locations.get(j).unwrap() * circ_prograde_population_masses.get(j).unwrap()) + (bin_orb_a.get(i).unwrap() * bin_masses.get(i).unwrap())) / (circ_prograde_population_masses.get(j).unwrap() + bin_masses.get(i).unwrap());
-                        let rhill_poss_encounter = center_of_mass * ((circ_prograde_population_masses.get(j).unwrap() + bin_masses.get(i).unwrap()) / (3. * smbh_mass)).powf(1.0/3.0);
+                        // Damp the eccentric interloper
+                        out_orbs_ecc[ecc_orig] *= 1.0 - delta_energy_strong;
+                        out_orbs_a[ecc_orig]   *= 1.0 - delta_energy_strong;
 
-                        if separation - rhill_poss_encounter < 0.0 {
-                            let _ = id_nums_poss_touch.append(vec![circ_prograde_population_id_nums.get(j).unwrap(), bin_id_nums.get(i).unwrap()]);
-                            let _ = frac_rhill_sep.append(separation/rhill_poss_encounter);
-                        }
+                        break; // circ particle is kicked; no further encounters this step
                     }
                 }
             }
         }
     }
 
-    // we only need to return these here, the others we've mutated in place
-    (id_nums_poss_touch, frac_rhill_sep, id_nums_ionized_bin, id_nums_merged_bin)
+    // ── 7. Return mutated arrays to Python ───────────────────────────────────
+    let out_a   = Array1::from(out_orbs_a).into_pyarray(py);
+    let out_ecc = Array1::from(out_orbs_ecc).into_pyarray(py);
+    Ok((out_a, out_ecc))
 }
-
 
 
 
