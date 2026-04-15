@@ -6,7 +6,7 @@ use crate::accelerants::{C_SI, EARTH_TO_SOL, FloatArray1, G_SI, JUPITER_TO_SOL, 
 
 /// Calculate the gravitational radius r_g in SI units (meters)
 /// This matches the Python si_from_r_g function behavior
-pub fn si_from_r_g(smbh_mass: f64, distance_r_g: f64) -> f64 {
+pub const fn si_from_r_g(smbh_mass: f64, distance_r_g: f64) -> f64 {
     // smbh_mass is in solar masses, convert to kg
     let smbh_mass_kg = smbh_mass * M_SUN_KG;
     

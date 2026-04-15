@@ -115,6 +115,11 @@ pub fn evolution_helper<'py>(
     const STEPW0_DELTA_SEMIMAJ: f64 = STEPW0_SEMI_MAJ_0 - STEPW0_SEMI_MAJ_F;  //rg
     const STEPW0_DELTA_INC: f64 = STEPW0_INC_0 - STEPW0_INC_F;
 
+    // pre-compute SI reference constants outside the loop
+    let smbh_mass_kg = smbh_mass * M_SUN_KG;
+    const SMBH_MASS_0_KG: f64 = SMBH_MASS_0 * M_SUN_KG;
+    const ORBITER_MASS_0_KG: f64 = ORBITER_MASS_0 * M_SUN_KG;
+
     // setting up slices
     let disk_bh_retro_masses_slice = disk_bh_retro_masses_arr.as_slice().unwrap();
     let disk_bh_retro_orbs_a_slice = disk_bh_retro_orbs_a_arr.as_slice().unwrap();
@@ -185,18 +190,15 @@ pub fn evolution_helper<'py>(
             // check that this is the right input
             let semi_maj_axis = si_from_r_g(smbh_mass, *disk_bh_retro_orbs_a);
 
-            let smbh_mass_kg = smbh_mass * M_SUN_KG;
             let retro_mass_kg = disk_bh_retro_masses * M_SUN_KG;
 
             let (tau_e_current, tau_a_current) = tau_ecc_dyn_local(smbh_mass_kg, retro_mass_kg, *disk_bh_retro_orbs_ecc, *disk_bh_retro_orbs_inc, *disk_bh_retro_arg_periapse, *disk_surf, semi_maj_axis);
             let tau_inc_current = tau_inc_dyn_local(smbh_mass_kg, retro_mass_kg, *disk_bh_retro_orbs_ecc, *disk_bh_retro_orbs_inc, *disk_bh_retro_arg_periapse, *disk_surf, semi_maj_axis);
 
-            let smbh_mass_0_kg = SMBH_MASS_0 * M_SUN_KG;
-            let orbiter_mass_0_kg = ORBITER_MASS_0 * M_SUN_KG;
             let semi_maj_0_si = si_from_r_g(SMBH_MASS_0, semi_maj_0);
 
-            let (tau_e_ref, tau_a_ref) = tau_ecc_dyn_local(smbh_mass_0_kg, orbiter_mass_0_kg, ecc0, inc0, periapse, *disk_surf, semi_maj_0_si);
-            let tau_inc_ref = tau_inc_dyn_local(smbh_mass_0_kg, orbiter_mass_0_kg, ecc0, inc0, periapse, *disk_surf, semi_maj_0_si);
+            let (tau_e_ref, tau_a_ref) = tau_ecc_dyn_local(SMBH_MASS_0_KG, ORBITER_MASS_0_KG, ecc0, inc0, periapse, *disk_surf, semi_maj_0_si);
+            let tau_inc_ref = tau_inc_dyn_local(SMBH_MASS_0_KG, ORBITER_MASS_0_KG, ecc0, inc0, periapse, *disk_surf, semi_maj_0_si);
 
             let tau_e_div = tau_e_current / tau_e_ref;
             let tau_a_div = tau_a_current / tau_a_ref;
