@@ -171,13 +171,77 @@ pub fn si_from_r_g_helper<'py>(
 // si_from_r_g and r_g_from_units are the same operation in reverse, we just need to accept
 // different unit types and deal with them.
 #[pyfunction]
+/// Calculates the r_g distance from the mass and SI distance of an SMBH using
+///
+/// distance_r_g / (G_SI * mass) / (C_SI * C_SI)
+///
+/// `mass` must be a single value (scalar or 1-array) with AstroPy units or unitless and
+/// denominated in solar masse
+/// `distance_r_g` may be a Quantity array of AstroPy units, a unitless NumPy array, or a unitless scalar. In the absece of units, distance_r_g is assumed to be denominated in gravitational radii
 pub fn r_g_from_units_helper<'py>(
     py: Python<'py>, 
-    smbh_mass: f64, 
+    smbh_mass: &Bound<'_, PyAny>, 
     distance_r_g: &Bound<'_, PyAny>,
 ) -> PyResult<FloatArray1<'py>> {
 
-    let smbh_mass_kg = smbh_mass * M_SUN_KG;
+    let smbh_mass_kg = if let Ok(solarmass) = smbh_mass.extract::<f64>() {
+        // if there is no associated unit, assume mass is denominated in solar masses, transform
+        // into kilograms for calculations
+        solarmass * M_SUN_KG
+    } else if let Ok(solarmasses) = smbh_mass.extract::<PyReadonlyArray1<f64>>() {
+        // if there is no associated unit, assume mass is denominated in solar masses, transform
+        // into kilograms for calculations
+        // and we just need the first value, as this is meant to be a scalar anyway
+        let solarmass = solarmasses.as_slice().unwrap().first().unwrap();
+        solarmass * M_SUN_KG
+    } else if let Ok(quantity) = extract_scalar_unit(smbh_mass) {
+        // there is some unit, transform to solar masses...
+        let coeff = match quantity.unit {
+            Unit::Gram => { Ok(M_SUN_G) }
+            Unit::Kilogram => { Ok(M_SUN_KG) },
+            Unit::EarthMass => { Ok(EARTH_TO_SOL) },
+            Unit::JupiterMass => { Ok(JUPITER_TO_SOL) },
+            Unit::SolarMass => { Ok(1.0) },
+            _ => Err(
+                PyTypeError::new_err(
+                    format!("Unsupported unit for si_from_r_g: {:?}", quantity.unit)
+                )
+            )
+        }?;
+
+        // ...then to kilograms
+        let solarmass = quantity.value / coeff;
+        solarmass * M_SUN_KG
+        // is this a bit silly? Yes, but that's also what the original function did, and
+        // it makes things a bit easier to understand
+    } else if let Ok(array_quantity) = extract_array_unit(smbh_mass) {
+        // there is some unit, transform to solar masses...
+        let coeff = match array_quantity.unit {
+            Unit::Gram => { Ok(M_SUN_G) }
+            Unit::Kilogram => { Ok(M_SUN_KG) },
+            Unit::EarthMass => { Ok(EARTH_TO_SOL) },
+            Unit::JupiterMass => { Ok(JUPITER_TO_SOL) },
+            Unit::SolarMass => { Ok(1.0) },
+            _ => Err(
+                PyTypeError::new_err(
+                    format!("Unsupported unit for si_from_r_g: {:?}", array_quantity.unit)
+                )
+            )
+        }?;
+
+        // ...then to kilograms
+        // since this is meant to be a scalar, we only want to take the first element, 
+        let solarmass = array_quantity.values.as_slice().unwrap().first().unwrap() / coeff;
+        solarmass * M_SUN_KG
+        // is this a bit silly? Yes, but that's also what the original function did, and
+        // it makes things a bit easier to understand
+    } else {
+        return Err(
+            PyTypeError::new_err(
+                "Invalid type for smbh_mass: must be either a unitless scalar or AstroPy Quantity scalar".to_string()
+            )
+        )
+    };
 
     // Calculate r_g = G * M / c^2
     let r_g = (G_SI * smbh_mass_kg) / (C_SI * C_SI);
@@ -199,7 +263,7 @@ pub fn r_g_from_units_helper<'py>(
         };
 
         array_quantity.values.as_slice().unwrap().iter().enumerate().for_each(|(i, val)| {
-            out_slice[i] = val * coeff * r_g;
+            out_slice[i] = val * coeff / r_g;
         });
 
         Ok(out)
@@ -220,7 +284,11 @@ pub fn r_g_from_units_helper<'py>(
         let solmass = match quantity.unit {
             Unit::Meter => { quantity.value },
             Unit::SolarRad => { quantity.value * R_SUN_M }
-            _ => panic!("Unsupported unit for r_g_from_units: {:?}", quantity.unit)
+            _ => return Err(
+                PyTypeError::new_err(
+                    format!("Unsupported unit for r_g_from_units: {:?}", quantity.unit)
+                )
+            )
         };
 
         let out = solmass / r_g;
@@ -239,6 +307,12 @@ pub fn r_g_from_units_helper<'py>(
 /// Scalar version of r_schwarzschild_of_m for python-facing... or should vector version be
 /// default?? 
 #[pyfunction]
+/// Calculates the schwarzschild radius in meters of a mass using
+///
+/// (2.0 * G * mass / C^2)
+///
+/// `mass` may be an AstroPy Quantity mass array, or else a NumPy array of unitless masses. In the
+/// latter case, the masses are assumed to be denominated in solar masses
 pub fn r_schwarzschild_of_m_helper<'py>(py: Python<'py>, mass: &Bound<'_, PyAny>) -> PyResult<FloatArray1<'py>> {
 
     // extract the attribute if it exists, and if so, make sure it's denominated in solar masses
