@@ -55,7 +55,7 @@ pub fn evolution_helper<'py>(
     disk_bh_retro_orbs_ecc_arr: PyReadonlyArray1<f64>, 
     disk_bh_retro_orbs_inc_arr: PyReadonlyArray1<f64>, 
     disk_bh_retro_arg_periapse_arr: PyReadonlyArray1<f64>, 
-    disk_inner_stable_circ_orb_arr: PyReadonlyArray1<f64>, 
+    disk_inner_stable_circ_orb: f64, 
     disk_surf_arr: PyReadonlyArray1<f64>,
     timestep_duration_yr: f64, 
     disk_radius_outer_arr: PyReadonlyArray1<f64>,
@@ -121,7 +121,7 @@ pub fn evolution_helper<'py>(
     let disk_bh_retro_orbs_ecc_slice = disk_bh_retro_orbs_ecc_arr.as_slice().unwrap();
     let disk_bh_retro_orbs_inc_slice = disk_bh_retro_orbs_inc_arr.as_slice().unwrap();
     let disk_bh_retro_arg_periapse_slice = disk_bh_retro_arg_periapse_arr.as_slice().unwrap();
-    let disk_inner_stable_circ_orb_slice = disk_inner_stable_circ_orb_arr.as_slice().unwrap();
+    // let disk_inner_stable_circ_orb_slice = disk_inner_stable_circ_orb_arr.as_slice().unwrap();
     let disk_surf_slice = disk_surf_arr.as_slice().unwrap();
     let disk_radius_outer_slice = disk_radius_outer_arr.as_slice().unwrap();
     let rng_slice = rng_arr.as_slice().unwrap();
@@ -140,12 +140,12 @@ pub fn evolution_helper<'py>(
         .zip(disk_bh_retro_orbs_ecc_slice)
         .zip(disk_bh_retro_orbs_inc_slice)
         .zip(disk_bh_retro_arg_periapse_slice)
-        .zip(disk_inner_stable_circ_orb_slice)
+        // .zip(disk_inner_stable_circ_orb_slice)
         .zip(disk_surf_slice)
         .zip(disk_radius_outer_slice)
         .zip(rng_slice)
         .enumerate()
-        .for_each(|(i, ((((((((disk_bh_retro_masses, disk_bh_retro_orbs_a), disk_bh_retro_orbs_ecc), disk_bh_retro_orbs_inc), disk_bh_retro_arg_periapse), disk_inner_stable_circ_orb), disk_surf), disk_radius_outer), rng))| {
+        .for_each(|(i, (((((((disk_bh_retro_masses, disk_bh_retro_orbs_a), disk_bh_retro_orbs_ecc), disk_bh_retro_orbs_inc), disk_bh_retro_arg_periapse), disk_surf), disk_radius_outer), rng))| {
 
         let cos_pm1_mask: bool = disk_bh_retro_arg_periapse.cos().abs() >= 0.5;
         let cos_0_mask: bool = !cos_pm1_mask;
@@ -203,7 +203,7 @@ pub fn evolution_helper<'py>(
             let disk_bh_retro_orbs_a_new: f64 = (
                 disk_bh_retro_orbs_a * (
                     1.0 - delta_semimaj / disk_bh_retro_orbs_a * (timestep_duration_yr / semimaj_scale_factor)
-                )).clamp(*disk_inner_stable_circ_orb, f64::INFINITY);
+                )).clamp(disk_inner_stable_circ_orb, f64::INFINITY);
             let disk_bh_retro_orbs_inc_new: f64 = (
                 disk_bh_retro_orbs_inc * (
                     1.0 - delta_inc / disk_bh_retro_orbs_inc * (timestep_duration_yr / inc_scale_factor)
