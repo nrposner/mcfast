@@ -1,6 +1,6 @@
 [package]
 name = "mcfast"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 exclude = [
   "python/",
@@ -21,3 +21,4 @@ rayon = "1.11.0"
 # splines = "5.0.0"
 glob = "0.3"
 ndarray = "0.17.2"
+phf = {version = "0.13.1", features=["macros"]}

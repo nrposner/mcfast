@@ -2,7 +2,7 @@ use std::f64::consts::PI;
 
 use pyo3::prelude::*;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
-use crate::accelerants::luminosity::si_from_r_g;
+use crate::accelerants::units::si_from_r_g;
 
 // const M_SUN_KG: f64 = 1.9884099e30;  // Solar mass in kg
 // const C_SI: f64 = 299792460.0;     // Speed of light in m/s

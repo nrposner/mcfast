@@ -10,6 +10,10 @@ pub mod tau;
 pub mod torque;
 pub mod star_mass;
 pub mod gw;
+pub mod baruteau;
+pub mod units;
+
+pub mod evolution;
 
 use pyo3::prelude::*;
 use numpy::PyArray1;
@@ -23,9 +27,16 @@ pub const C_CGS: f64 = 2.99792458e10;
 pub const _M_SUN_CGS: f64 = 1.98847e33;
 
 pub const M_SUN_KG: f64 = 1.9884099e30;  // Solar mass in kg
+pub const M_SUN_G: f64 = 1.9884099e30 * 1.0e3;  // Solar mass in g
 pub const C_SI: f64 = 299792460.0;     // Speed of light in m/s
 pub const G_SI: f64 = 6.67430e-11;     // Gravitational constant in m^3/(kg s^2)
 pub const MPC_SI: f64 = 3.08568e22; // number of meters in a megaparsec
 pub const L_SUN_W: f64 = 3.828e26;       // watts
 pub const YR_S: f64 = 3.15576e7;         // seconds per Julian year
 pub const R_SUN_M: f64 = 6.957e8;
+
+
+// const KG_TO_SOL: f64 = 1.9884099e+30;
+const EARTH_TO_SOL: f64 = 1.9884099e+30 / 5.9721679e+24;
+const JUPITER_TO_SOL: f64 = 1.9884099e+30 / 1.8981246e+27;
+

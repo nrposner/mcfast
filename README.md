@@ -1,18 +1,21 @@
-# McFAST v0.1.7
+# McFAST v0.1.8
 
 Utilities and accelerated functions designed for use by the McFACTS team at CUNY.
 
 Functions currently fully tested for integration:
-tau_inc_dyn_helper
-tau_ecc_dyn_helper
-gw_strain_helper
-analytical_kick_velocity_helper
-merged_orb_ecc_helper
-torque_mig_timescale_helper
-generate_r
-shock_luminosity_helper
-jet_luminosity_helper
-encounters_prograde_sweep_helper
+- tau_inc_dyn_helper
+- tau_ecc_dyn_helper
+- gw_strain_helper
+- analytical_kick_velocity_helper
+- merged_orb_ecc_helper
+- torque_mig_timescale_helper
+- generate_r
+- shock_luminosity_helper
+- jet_luminosity_helper
+- encounters_prograde_sweep_helper
+- si_from_r_g_helper
+- r_g_from_units_helper
+- r_schwarzschild_of_m_helper
 
 Functions currently in testing for integration:
 star_wind_mass_loss_helper
