@@ -1,3 +1,4 @@
+#![feature(portable_simd)]
 use pyo3::prelude::*;
 
 mod tools;

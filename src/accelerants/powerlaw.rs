@@ -1,15 +1,97 @@
 use pyo3::{exceptions::PyValueError, prelude::*};
 use numpy::{PyArray1, PyArrayMethods};
+
 use rayon::prelude::*;
+use core::simd::f64x2;
 
 use crate::accelerants::FloatArray1;
-use sleef::Sleef;           // brings pow_u10 into scope on f64
 use std::f64::consts::PI;
 
-/// Fills `r_slice` and `y_slice` over `[lo..hi)` with r-values and power-law
-/// weights using exponent `neg_index`. `VOL` selects volume scaling at compile
-/// time, so the branch evaporates in each monomorphization.
+
+/// SIMD kernel: processes one contiguous chunk, called from a rayon task.
 #[inline(always)]
+fn fill_chunk<const VOL: bool>(
+    r_chunk: &mut [f64],
+    y_chunk: &mut [f64],
+    start: f64,
+    step: f64,
+    inv_crit: f64,
+    neg_index: f64,
+    global_offset: usize,
+) {
+    let len = r_chunk.len();
+    let step_v  = f64x2::splat(step);
+    let inv_v   = f64x2::splat(inv_crit);
+    let exp_v   = f64x2::splat(neg_index);
+    let pi_step = f64x2::splat(PI * step);
+
+    let pairs = len / 2;
+    for c in 0..pairs {
+        let i0 = c * 2;
+        let i1 = i0 + 1;
+        let idx = f64x2::from_array([
+            (i0 + global_offset) as f64,
+            (i1 + global_offset) as f64,
+        ]);
+        let vals = f64x2::splat(start) + idx * step_v;
+        let bases = vals * inv_v;
+        let p = sleef::f64x::pow_u10(bases, exp_v);
+
+        let v = vals.to_array();
+        r_chunk[i0] = v[0];
+        r_chunk[i1] = v[1];
+
+        if VOL {
+            let y = pi_step * vals * vals * p;
+            let ya = y.to_array();
+            y_chunk[i0] = ya[0];
+            y_chunk[i1] = ya[1];
+        } else {
+            let pa = p.to_array();
+            y_chunk[i0] = pa[0];
+            y_chunk[i1] = pa[1];
+        }
+    }
+
+    // scalar tail
+    if len % 2 != 0 {
+        let i = len - 1;
+        let val = start + ((i + global_offset) as f64) * step;
+        r_chunk[i] = val;
+        let base = val * inv_crit;
+        let p = sleef::f64::pow_u10(base, neg_index);
+        y_chunk[i] = if VOL { PI * val * val * step * p } else { p };
+    }
+}
+
+/// Parallel + SIMD fill for one power-law region.
+// fn fill_region<const VOL: bool>(
+//     r_slice: &mut [f64],
+//     y_slice: &mut [f64],
+//     start: f64,
+//     step: f64,
+//     inv_crit: f64,
+//     neg_index: f64,
+//     region_offset: usize,
+// ) {
+//     let len = r_slice.len();
+//     let n_threads = rayon::current_num_threads().max(1);
+//     // Round up to even so SIMD pairs align within each chunk.
+//     let chunk_size = ((len + n_threads - 1) / n_threads + 1) & !1;
+//
+//     r_slice
+//         .chunks_mut(chunk_size)
+//         .zip(y_slice.chunks_mut(chunk_size))
+//         .collect::<Vec<_>>()
+//         .into_par_iter()
+//         .enumerate()
+//         .for_each(|(chunk_idx, (r_chunk, y_chunk))| {
+//             let global_offset = region_offset + chunk_idx * chunk_size;
+//             fill_chunk::<VOL>(
+//                 r_chunk, y_chunk, start, step, inv_crit, neg_index, global_offset,
+//             );
+//         });
+// }
 fn fill_region<const VOL: bool>(
     r_slice: &mut [f64],
     y_slice: &mut [f64],
@@ -17,24 +99,31 @@ fn fill_region<const VOL: bool>(
     step: f64,
     inv_crit: f64,
     neg_index: f64,
-    offset: usize, // global index of r_slice[0]
+    region_offset: usize,
 ) {
+    let len = r_slice.len();
+    if len == 0 {
+        return;
+    }
+
+    let n_threads = rayon::current_num_threads().max(1);
+    let chunk_size = ((len + n_threads - 1) / n_threads + 1) & !1;
+    // chunk_size is guaranteed > 0 here since len > 0
+
     r_slice
-        .par_iter_mut()
-        .zip(y_slice.par_iter_mut())
+        .chunks_mut(chunk_size)
+        .zip(y_slice.chunks_mut(chunk_size))
+        .collect::<Vec<_>>()
+        .into_par_iter()
         .enumerate()
-        .for_each(|(i, (r_out, y_out))| {
-            let val = start + ((i + offset) as f64) * step;
-            *r_out = val;
-
-            let base = val * inv_crit;
-            // sleef scalar pow, ~1 ULP. Swap for a packed sleef call if you
-            // want true SIMD; see note below.
-            let p = base.powf(neg_index);
-
-            *y_out =  PI * val * val * step * p ;
+        .for_each(|(chunk_idx, (r_chunk, y_chunk))| {
+            let global_offset = region_offset + chunk_idx * chunk_size;
+            fill_chunk::<VOL>(
+                r_chunk, y_chunk, start, step, inv_crit, neg_index, global_offset,
+            );
         });
 }
+
 
 #[pyfunction]
 pub fn generate_r<'py>(
@@ -53,6 +142,10 @@ pub fn generate_r<'py>(
     let r_slice = unsafe { r_arr.as_slice_mut().unwrap() };
     let y_slice = unsafe { r_pdf_arr.as_slice_mut().unwrap() };
 
+    if num_points < 2 {
+        return Err(PyValueError::new_err("[generate_r] num_points must be >= 2"));
+    }
+
     let step = (end - start) / ((num_points - 1) as f64);
     let neg_inner = -index_inner;
     let neg_outer = -index_outer;
@@ -61,8 +154,6 @@ pub fn generate_r<'py>(
     let split_idx = ((crit_radius - start) / step).ceil() as usize;
     let split_idx = split_idx.min(num_points);
 
-    // Dispatch once on the runtime bool into two fully specialized code paths.
-    // Everything below this point is VOL-known-at-compile-time.
     if volume_scaling {
         let (r_in, r_out) = r_slice.split_at_mut(split_idx);
         let (y_in, y_out) = y_slice.split_at_mut(split_idx);
@@ -75,15 +166,15 @@ pub fn generate_r<'py>(
         fill_region::<false>(r_out, y_out, start, step, inv_crit, neg_outer, split_idx);
     }
 
-    let y_sum: f64 = y_slice.par_iter().sum();
+    let y_sum: f64 = y_slice.iter().sum();  // sequential sum for determinism
     if y_sum == 0.0 {
         return Err(PyValueError::new_err(
             "[Setup BH Locs] sum(y) = 0. \nMust be non-zero for use as denominator during pdf normalization.",
         ));
     }
 
-    let inv_sum = 1.0 / y_sum; // one divide, many muls
-    y_slice.par_iter_mut().for_each(|y| *y *= inv_sum);
+    let inv_sum = 1.0 / y_sum;
+    y_slice.iter_mut().for_each(|y| *y *= inv_sum);
 
     Ok((r_arr, r_pdf_arr))
 }
