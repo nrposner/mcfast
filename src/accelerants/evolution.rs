@@ -180,7 +180,9 @@ pub fn evolution_helper<'py>(
             // because they can overlap (ecc >= 0.9999 AND |inc| < pi/2), and in
             // Python the barely_prograde assignment comes after max_ecc, overwriting it.
             let (semi_maj_0, ecc0, inc0, time, delta_ecc, delta_semimaj, delta_inc) = if condition1 {
-                (STEP1_SEMI_MAJ_0, STEP1_ECC_0, STEP1_INC_0, STEP1_TIME, STEP1_DELTA_ECC, STEP1_DELTA_SEMIMAJ, STEP1_DELTA_INC)
+                // step1_delta_ecc, unlike the others, is negative because we have to 
+                // grow the ecc, unlike the behavior for everything else
+                (STEP1_SEMI_MAJ_0, STEP1_ECC_0, STEP1_INC_0, STEP1_TIME, -STEP1_DELTA_ECC, STEP1_DELTA_SEMIMAJ, STEP1_DELTA_INC)
             } else if condition3 {
                 (STEP3_SEMI_MAJ_0, STEP3_ECC_0, STEP3_INC_0, STEP3_TIME, STEP3_DELTA_ECC, STEP3_DELTA_SEMIMAJ, STEP3_DELTA_INC)
             } else if condition2 {
