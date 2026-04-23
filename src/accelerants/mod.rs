@@ -12,6 +12,7 @@ pub mod star_mass;
 pub mod gw;
 pub mod baruteau;
 pub mod units;
+pub mod tde;
 
 pub mod evolution;
 
