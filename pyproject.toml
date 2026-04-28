@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "mcfast"
-version = "0.1.8"
+version = "0.1.9"
 description = "A set of utilities and Rust-accelerated functions for the McFACTS AGN disk simulation project"
 readme = "README.md"
 license = { text = "MIT" }
